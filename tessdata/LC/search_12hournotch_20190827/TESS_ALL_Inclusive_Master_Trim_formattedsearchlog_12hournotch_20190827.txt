@@ -1,0 +1,1 @@
+383390264 20190827 ./tessdata/LC/search_12hournotch_20190827/tic383390264_12hournotch_searchoutput.pkl 
