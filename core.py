@@ -2,20 +2,18 @@
 import numpy as np
 import pickle
 import scipy.stats
-from scipy.io.idl import readsav as idlread
-import os,warnings,signal
+import os
+
+
+##,warnings
+##,signal
+
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 from lcfunctions import robustmean
 
 ##installed things
-import batman
 import bls
-
-##my imports for future tracking
-#from gaussfit import gaussfit
-#from gaussfit import gaussfit_mp
-#import k2sff
 import mpyfit ##using mpyfit for the sliding window because its a C version and is incredibly fast compared to the python only version. Results are identical.
 
 
@@ -28,17 +26,6 @@ np.set_printoptions(suppress=True)
 ##then to run things to .function()
 ##does not include k2sff (thats in k2sff.py)
     
-class ACRerror(Exception):
-    '''Base class for other exceptions internal to this code'''
-    pass    
-
-def timeout_handler(signum,frame):
-    '''
-    handler for use with signal to catch timeouts
-    for some reason the exception string doesnt end up in the output on TACC lonestar5...?
-    '''
-    print('Forever is over!!')    
-    raise ACRerror('Timeout issue')
 
 ##a function that bins a lightcurve into a certain number of bins
 def binlc(x,y,nbins=100):
@@ -107,98 +94,6 @@ def calc_phase(time,period,p0):
     phase = (time-p0)/period - anchor
     return phase
 
-##plots light curve (time vs flux), with vertical bars marking the indicies provided. Mainly for debugging
-def markplot(time,flux,indices):
-    plt.plot(time,flux,'b')
-    plt.plot(time,flux,'.b')
-    bad   = np.isnan(flux)
-    good  = [not i for i in bad]
-    clean = np.where(good)[0]
-    for i in range(len(indices)):
-        plt.plot([time[indices[i]],time[indices[i]]],[np.min(flux[clean]),np.max(flux[clean])],'r--')
-    plt.show()
-    #return True
-
-##function that reads Andrew Vanderburgs light curve files from MAST
-##everything is already cleaned in Andrews files, so things are easy
-def read_datafile_vanderburg(filename,clean=False):
-    from astropy.io import fits
-    hdulist    = fits.open(filename)
-    head       = hdulist[1].header
-    data       = hdulist[1].data
-    dl         = data.T.shape[0]
-    ##extract relevant parameters into our own recarray with easier to use tagnames
-    outdata         = np.recarray((dl,),dtype=[('t',float),('fraw',float),('fcor',float),('s',float),('qual',int),('detrend',float),('divisions',int)])   
-    outdata.t       = data["T"]
-    outdata.fraw    = data["FRAW"]
-    outdata.fcor    = data['FCOR']
-    outdata.s       = data['ARCLENGTH']
-    outdata.qual    = data['MOVING']
-    outdata.detrend = data['MOVING']*0.0
-    
-    ##make up the divisions:
-    ndivisions=25
-    newdiv = np.ceil(ndivisions*(outdata.t-np.nanmin(outdata.t))/(np.nanmax(outdata.t)-np.nanmin(outdata.t))) -1 
-    qwe                   = np.where(newdiv < 0)[0]
-    newdiv[qwe]    = 0
-    outdata.divisions = newdiv
-    
-
-    ##for campaigns < 3, need to clean away thruster fire points.
-    ##doing it for pre-cleaned data won't cause issues.
-    if clean == True:
-        thrusterok = np.where(outdata.qual == 0)[0]
-        outdata    = outdata[thrusterok]
-    
-    return outdata
-
-
-##function that reads output files from AndrewV's pipeline and converts them into the standard 
-##recarrays used in the detrending pipeline
-def read_datafile_avextract(filename,clean=False): 
-    stuff  = idlread(filename)
-    data   = stuff.data.T ##not sure why T is needed here.....
-    cln    = np.where(data.notmoving == 1)[0]
-    bestfcor = stuff.fcorcut
-    time   = stuff.tcut
-    psfcor = np.array(data.FPSFCOR.tolist())
-    ccor   = np.array(data.FCIRCCOR.tolist())
-    psfraw = np.array(data.FPSFRAW.tolist())
-    ##figure out which psf was the best
-    block  = np.tile(bestfcor,(10,1)).T
-    test   = np.sum(psfcor[cln,:]-block,axis=0)
-    qwe    = np.where(test == 0)[0]
-    if len(qwe) != 0:
-        bestraw = psfraw[cln,qwe[0]]
-        aptype = 'PSF'
-    else: 
-        ccor   = np.array(data.FCIRCCOR.tolist())
-        rcor   = np.array(data.FCIRCRAW.tolist())
-        test   = np.sum(ccor[cln,:]-block,axis=0)
-        qwe    = np.wher(test == 0)[0]
-        if len(qwe) == 0:
-            print( 'Cant find best aperture')
-            import pdb
-            pdb.set_trace()
-        bestraw = rcor[cln,qwe[0]]
-        aptype = 'CIRC'
-    
-    dl = time.shape[0]    
-    outdata         = np.recarray((dl,),dtype=[('t',float),('fraw',float),('fcor',float),('s',float),('qual',int),('detrend',float)])
-    outdata.t       = time
-    outdata.fraw    = bestraw
-    outdata.fcor    = bestfcor
-    outdata.s       = data.ARCLENGTH[cln]
-    outdata.qual    = data.MOVING[cln]
-    outdata.detrend = data.MOVING[cln]*0.0
-
-    
-    if clean == True:
-        keep    = np.where(outdata.qual ==0)[0]
-        outdata = outdata[keep]
-
-    return outdata,qwe[0],aptype
-    
 
 ##transit like box function. Depth is a fractional depth, width is in days (as is x)
 def notchbox(x,depth,width,middle):
@@ -230,16 +125,10 @@ def transit_window_slide(p,t=None,fl=None,sig_fl=None,s=None,ttime=None,fjac=Non
 def transit_window_slide_pyfit(p,args,model=False):
     ##unpack the arguaments
     t,fl,sig_fl,s,ttime = args
-    #import pdb
-    #pdb.set_trace()
     
-   # import warnings
-   # warnings.filterwarnings('error')    
-    #try:
     polyshape = p[0] + p[1]*t + p[2]*t**2 + p[3]*s + p[4]*s**2 + p[7]*s**3
-    #except Warning: 
-        #import pdb
-        #pdb.set_trace()
+ 
+ 
         
     transitshape = notchbox(t,p[5],p[6],ttime) 
     themod = polyshape*transitshape
@@ -277,14 +166,8 @@ def transit_window4_slide_pyfit(p,args,model=False):
     #import pdb
     #pdb.set_trace()
     
-   # import warnings
-   # warnings.filterwarnings('error')    
-    #try:
     polyshape = p[0] + p[1]*t + p[2]*t**2
-    #except Warning: 
-        #import pdb
-        #pdb.set_trace()
-        
+
     transitshape = slopebox(t,p[3],p[4],ttime,p[5]) 
     themod = polyshape*transitshape
     resid = (fl-themod)/sig_fl

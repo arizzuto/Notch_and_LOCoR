@@ -11,7 +11,8 @@ class target:
         
     def load_data_tess(self,datafile,removebad = True,sector_label=''):
         '''
-            This function opens a standard TESS LC downloaded from mast or elsewhere        
+            This function opens a standard TESS LC downloaded from mast or elsewhere   
+            By default quality flags that are not zero (all good) get yeeted, set removebad=False to keep everything 
         '''
         hdu = fits.open(datafile)
         self.rawdata = hdu[1].data.copy()
@@ -22,17 +23,29 @@ class target:
         self.data = lcfunctions.LCconvertCTL(self.rawdata,removebad=removebad)
         self.sector=sector_label
         
-    def load_data(time,flux,rawflux=[0],qual=[0],al=[0],source='user',sourcefile = 'user',sector_label='user'):
+    def load_data(time,flux,rawflux=[0],qual=[0],al=[0],source='user',sourcefile = 'user',sector_label='user',removebad=True):
         '''
             Load data from user input, maybe their own thing?
+            By default quality flags that are not zero (all good) get yeeted, set removebad=False to keep everything 
+            
+            INPUTS:
+                time: time for each datapoint, in days
+                flux: flux at each datapoint Should be normalized so that it sits at a baseline of 1, i.e. median divided would do it.
+            OPTIONAL INPUTS:
+                rawflux =[0]: A raw flux at each datapoint, default sets it all to zero
+                qual=[0] : Quality flags as per tess or K2, default sets to zero meaning all fine
+                al=[0]: arclength, useful for k2sff corrected K2, otherwise defaults to zero
+                source = 'user': label for the source
+                sourcefile ='user': If this data came from some file, save it here
+                sector_label='user': Did it come from a particular k2 or tess sector? Put that here
         '''
         dl = len(lcdata)
-        outdata         = np.recarray((dl,),dtype=[('t',float),('fraw',float),('fcor',float),('s',float),('qual',int),('detrend',float),('divisions',float)])
+        outdata         = np.recarray((dl,),dtype=[('t',float),('fraw',float),('fcor',float),('s',float),('qual',int),('divisions',float)])
         outdata.t = time
         outdata.fcor=flux 
         outdata.fraw[:]    = 0 
         outdata.al[:]      = 0
-        outdata.detrend[:] = 0
+        #outdata.detrend[:] = 0
         outdata.qual[:]    = 0
         if len(rawflux) == len(flux): outdata.fraw = rawflux
         if len(al)      == len(flux): outdata.s    = al
@@ -42,8 +55,8 @@ class target:
         outdata.fcor /= np.nanmedian(outdata.fcor)
         outdata   = outdata[okok]
         keep      = np.where(outdata.qual == 0)[0]
-        outdata.s = 0.0
-        outdata   = outdata[keep]   
+        
+        if removebad == True:outdata   = outdata[keep]   
         self.data = outdata.copy()
         outdata   = 0.0
         self.rawdata = 0
@@ -53,10 +66,30 @@ class target:
 
         
     def load_data_k2(datafile):
-        print('not yet mate')
+        print('not implemented yet mate, use load_data and do it yourself!!!')
         
+    def load_data_cpm(datafile):
+        print('not implemented yet mate, use load_data and do it yourself!!!')
+        
+    def load_data_eleanor(datafile):
+        print('not implemented yet mate, use load_data and do it yourself!!!')
         
     def plotlc(self,figsize=(10,5),returnfigs=False,alpha=0.6,justdata=False):
+        '''
+        A function to plot progress for this target variable, used for quick and interactive inspection
+        Really a time saver for plotting as you go to sanity check things
+        
+        Will automatically plot detrended curves if found
+
+        justdata=True will turn off the detrended curves
+        returnfigs will make the code return: fig,ax
+        alpha sets the overall alpha for matplotlib
+        figsize lets you customize the figure size
+
+
+        '''
+        
+    
         fig,ax = plt.subplots(figsize=figsize)
         ax.plot(self.data.t,self.data.fcor,'.',label='Corrected',zorder=100,alpha=alpha)
         ax.plot(self.data.t,self.data.fraw,'.',alpha=alpha)
@@ -67,22 +100,25 @@ class target:
             try:
                 ax.plot(self.notch.t,self.notch.detrend,'.k',label='Notch detrended')
             except:
-     #           print('No notch detrend to plot')
                 dummy=0
             try:
                 ax.plot(self.locor.t,self.locor.detrend,'.r',label='LOCoR detrended')
             except:
-    #            print('No locor detrend')
                 dummy=0
 
         ax.legend()
 
         if returnfigs == True: return fig,ax
         
-    ##then we need attributes like run_detrend or something.
     
     def run_notch(self,window=0.5,mindbic=-1.0):
+        '''
+            A wrapper to run the notch filtering pipeline
+            user can specify window size, and also notch evidence strength (Delta Bayesian Information Criterion between notch and no-notch models) to accept notch.
+            The above defaults are usually fine for most things.
+        '''
         
+                
         notch = lcfunctions.run_notch(self.data,window=window,mindbic=mindbic)
         self.notch = notch.copy()
         self.notch_windowsize = window*1.0
@@ -91,6 +127,12 @@ class target:
         
         
     def run_locor(self,prot=None,alias_num=0.1):
+        '''
+            A wrapper to run the LOCoR pipeline
+            User has to give a prot either as an input optional argument, or by making sure self has a prot attribute (self.prot = something)
+            User can also specify the minimum period to alias the rotation period up to, to ensure data volume in each rotation is sufficient.
+        '''
+        
         
         if not prot: 
             if hasattr(self,'prot') == False: 
@@ -107,11 +149,6 @@ class target:
         self.locor_alias = alias_num*1.0
         locor=0
         
-        
-    
-
-
-
 
 
 
