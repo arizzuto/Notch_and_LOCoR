@@ -1,3 +1,0 @@
-166527623 202006 ./tessdata/LC/search_12hournotch_202006/tic166527623_12hournotch_searchoutput.pkl 
-383390264 202006 ./tessdata/LC/search_12hournotch_202006/tic383390264_12hournotch_searchoutput.pkl 
-166527623 202006 ./tessdata/LC/search_12hournotch_202006/tic166527623_12hournotch_searchoutput.pkl 
