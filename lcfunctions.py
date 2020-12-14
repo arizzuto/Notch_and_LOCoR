@@ -22,7 +22,8 @@ def LCconvertCTL(lcdata,removebad=True):
     
 
 def LCcombine(lclist):
-    ##combine multiple sectors of data:
+    ##combine multiple stacks of lightcurves in format created by LCconvertCTL above, and interface.py
+    ##lclist is just a tuple of such objects
     nsect = len(lclist)
     from numpy.lib.recfunctions import stack_arrays
     outdata = stack_arrays(lclist,asrecarray= True,usemask = False)
@@ -50,13 +51,15 @@ def robustmean(y,cut):
     
     
     
-def run_notch(data,window=0.5,mindbic=-1.0):
+def run_notch(data,window=0.5,mindbic=-1.0,useraw=False):
     '''
         a wrapper that runs the Notch filter detrending via core.do_detrend()
     '''
     
     print('Running notch filter pipeline with windowsize of ' + str(window) + ' and minimum DeltaBIC of ' +str(mindbic))    
-    fittimes,depth,detrend,polyshape,badflag = core.do_detrend(1,1001,arclength=False,raw=False,wsize=window,indata=data,saveoutput=False,outdir='',resolvabletrans=False,demode=1,cleanup=True,deltabic=mindbic)
+    fittimes,depth,detrend,polyshape,badflag = core.do_detrend(1,1001,arclength=False,raw=useraw,wsize=window,indata=data,saveoutput=False,outdir='',resolvabletrans=False,demode=1,cleanup=True,deltabic=mindbic)
+    
+    ##Store everything in a common format recarray
     dl=len(detrend)
     notch         = np.recarray((dl,),dtype=[('t',float),('detrend',float),('polyshape',float),('notch_depth',float),('deltabic',float),('bicstat',float),('badflag',int)])
     notch.t = data.t
@@ -71,11 +74,14 @@ def run_notch(data,window=0.5,mindbic=-1.0):
 
     return notch
     
-def run_locor(data,prot,alias_num=0.01):
+def run_locor(data,prot,alias_num=0.01,useraw=False):
     '''
         a wrapper that runs the LOCoR detrending via core.do_detrend()
     '''
-    fittimes,depth,detrend,polyshape,badflag = core.do_detrend(1,1001,arclength=False,raw=False,wsize=prot,indata=data,saveoutput=False,outdir='',resolvabletrans=False,demode=2,alias_num=alias_num,cleanup=True)
+    print('Running LOCoR with rotation period of ' + str(prot) + ' and alias_num of ' + str(alias_num))
+    fittimes,depth,detrend,polyshape,badflag = core.do_detrend(1,1001,arclength=False,raw=useraw,wsize=prot,indata=data,saveoutput=False,outdir='',resolvabletrans=False,demode=2,alias_num=alias_num,cleanup=True)
+    
+    ##store everything in a common format recarray
     dl=len(detrend)
     locor         = np.recarray((dl,),dtype=[('t',float),('detrend',float),('badflag',int)])
     locor.detrend = detrend.copy()
