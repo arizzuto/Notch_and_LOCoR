@@ -5,7 +5,7 @@ developed by Aaron Rizzuto in https://arxiv.org/abs/1709.09670.
 
 To get started, clone the repo and run through the Quick_Start_Guide jupyter notebook!
 
-See these other papers for use cases and examples of planets found:
-https://arxiv.org/abs/1808.07068
-https://arxiv.org/pdf/1906.10703
+See these other papers for use cases and examples of planets found:<br>
+https://arxiv.org/abs/1808.07068<br>
+https://arxiv.org/pdf/1906.10703<br>
 https://arxiv.org/abs/2005.00013
