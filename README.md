@@ -2,7 +2,8 @@
 
 This package hosts the Notch filter and LOCoR detrending algorithms for space-based lightcurve data from TESS and Kepler K2, from the ZEIT and THYME papers,
 developed by Aaron Rizzuto in https://arxiv.org/abs/1709.09670.
-
+   
+   
 To get started, clone the repo and run through the Quick_Start_Guide jupyter notebook!
 
 See these other papers for use cases and examples of planets found:<br>
