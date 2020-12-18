@@ -20,6 +20,7 @@ import core
 
 '''
     This file should contain functions for doing vetting checks on detections
+    Guys put cool vetting tools in here!!
 '''
 
 
@@ -49,11 +50,24 @@ def rotation_alias_check(periods,prot,folds=10,margin=1):
         rotation_flag[qwe] = i+1
     return rotation_flag
     
-def eoplot(wratpper
+
     
-def eo_plot(data,detrend,badflag,period,t0,dcyc,id=999,outdir=''):
+def eo_plot(data,detrend,badflag,period,t0,id=999,outdir='',noplot=False):
     '''
         Purpose: make even-odd plots for eyeball vetting.
+        INPUTS:
+        data: data recarray from the Notch/LOCoR code. See interface and lcfunctions for details
+        detrend: The array of things to plot in the even odd plotting. Usually the detrended output from Notch of LOCoR
+        badflag: As above, but the outlier flags
+        period: The planet period of interest
+        t0: The planet T0 of interest, assumes transit happens at phase=0.
+        outdir='': Optional, specify directory location to save the pdf plot. If left in default of '', will not save.
+        noplot=False: Optional, if set to True, will just output the even/odd flags for each point in detrend and not make any plots. 
+        
+        OUTPUTS:
+            eofig,eoax,eoflag: The figure and axis objects of the plot, and the even/odd period flags for each point in detrend.
+                               if noplot=True, just eoflag is returned
+        
     '''
     
     ##the code below that identifies even/odd regions expect transits happen at phase 0.5. so code that in
@@ -91,12 +105,18 @@ def eo_plot(data,detrend,badflag,period,t0,dcyc,id=999,outdir=''):
         eoflag[rng] =current
         counter += 1
     
+    ##Case where user just wants even off flags 
+    if noplot == True: return eoflag
+
+
+
+
     ##eoflag now has flags for even or odd (0/1) for each point in the dataset. 
     ##flag corresponding transits
-    even_trans = np.where((eoflag == 1) & (phase < 0.5+dcyc) & (phase > 0.5-dcyc))[0]
-    odd_trans  = np.where((eoflag == 0) & (phase < 0.5+dcyc) & (phase > 0.5-dcyc))[0]
-        
-    all_trans = np.concatenate((even_trans,odd_trans))
+#     even_trans = np.where((eoflag == 1) & (phase < 0.5+dcyc) & (phase > 0.5-dcyc))[0]
+#     odd_trans  = np.where((eoflag == 0) & (phase < 0.5+dcyc) & (phase > 0.5-dcyc))[0]
+#         
+#     all_trans = np.concatenate((even_trans,odd_trans))
 
     tight_ev  = np.where((eoflag == 1) & (phase < 0.505) & (phase > 0.495))[0]
     tight_odd = np.where((eoflag == 0) & (phase < 0.505) & (phase > 0.495))[0]
@@ -112,14 +132,14 @@ def eo_plot(data,detrend,badflag,period,t0,dcyc,id=999,outdir=''):
     phase -= 0.5
 
     fig,ax = plt.subplots(1)
-    ax.set_xlabel('Phase P=' + str(period)[0:5] + ' days')
+    ax.set_xlabel('Time From Transit (hours, P=' + str(period)[0:5] + ' days)')
     ax.set_ylabel('Relative Brightness')
     
    
-    ax.plot(phase[ev],detrend[ev],'.C0', alpha=0.5,markersize=4,label='Even',zorder=1)
-    ax.plot(phase[odd],detrend[odd],'.r', alpha=0.5,markersize=4,label='Odd',zorder=1)
+    ax.plot(phase[ev]*period*24.0,detrend[ev],'.C0', alpha=0.5,markersize=4,label='Even',zorder=1)
+    ax.plot(phase[odd]*period*24.0,detrend[odd],'.r', alpha=0.5,markersize=4,label='Odd',zorder=1)
     ax.legend()
-    ax.set_xlim([-0.05,0.05])
+    ax.set_xlim([-0.05*period*24.,0.05*period*24.])
     fig.tight_layout()
     
     if outdir != '':
@@ -129,7 +149,7 @@ def eo_plot(data,detrend,badflag,period,t0,dcyc,id=999,outdir=''):
             fig.savefig(figname)
         else: 
             print("Output directory doesn't exist, unable to save figure!")
-    return fig,ax
+    return fig,ax,eoflag
     
     
     
