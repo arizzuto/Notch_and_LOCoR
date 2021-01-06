@@ -106,3 +106,55 @@ def run_bls_bic(data,targetbic,badflag,rmsclip=1.5,snrcut=7.0,searchmax=20.0,sea
     
     best_px,dpx,t0x,detsigx,firstpower,pgrid,firstphase,dcycx =  core.bls_transit_search(data,targetbic,badflag,rmsclip=rmsclip,snrcut=snrcut,searchmax=searchmax,searchmin=searchmin,binn=binn,period_matching=[-1,-1,-1],mindcyc=mindcyc,maxdcyc=maxdcyc,freqmode=freqmode,datamode='bic')
     return best_px,dpx,t0x+best_px/2.0,detsigx,firstpower,pgrid,firstphase,dcycx 
+
+
+def showmenotch(ontr=True):
+    import pdb
+    '''
+    Function that draws plots to explain what Notch does.
+    '''
+    
+    ##generate 1 day of fake lightcurve.
+    t = np.arange(0,1,2.0/60.0/24.0)
+    ##the lightcurve, lets make it a parabola
+    lc = -(t*0.9-0.5)*(t*0.9-0.5)/100
+    lc = lc/np.median(lc)
+    lc = lc/np.max(lc)/10
+    lc = lc-np.median(lc)
+    polymod = lc*1.0 + 1.0
+    lc = lc + np.random.normal(1.0,0.003,len(lc))
+    ##add some other wiggles
+    wiggles  = np.sin(t*10*2*np.pi)*0.001
+    wiggles += np.sin(t*5*2*np.pi)*0.001
+    wiggles += np.sin(t*2*2*np.pi)*0.002
+    lc = lc + wiggles
+    
+    ##add some outliers
+    inout = np.where((t>0.2))[0][0:10]
+    outl = np.zeros(len(t),float)
+    outl[inout] = [0.03,0.1,0.05,0.04,0.03,0.02,0.02,0.01,0.001,0.001]
+    inout = inout[0:7]
+    ##add a transit
+    tr = np.ones(len(t),float)
+    dp=0.01
+    intr = np.where((t>0.5-2./24.) & (t<0.5+2./24.))[0]
+    if ontr == False: intr = np.where((t>0.75-2./24.) & (t<0.75+2./24.))[0]
+    inout = np.concatenate((inout,intr[2:-2]))
+    tr[intr] = 1.0 - dp
+    #pdb.set_trace()
+    lc_All = lc*tr + outl
+    
+    mskarr = np.ones(len(t))
+    mskarr[inout] = -1
+    qwe = np.where(mskarr > 0)[0]
+    
+    fitpoly = np.polyval(np.polyfit(t[qwe],lc[qwe]*tr[qwe],2),t)
+    trmod = polymod*tr
+    if ontr == False: trmod = polymod
+    tpoint = np.argmin(np.absolute(np.median(t)-t))
+    return t,lc,lc_All,fitpoly,trmod,tpoint,inout
+    
+
+    
+
+
