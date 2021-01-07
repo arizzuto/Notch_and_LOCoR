@@ -4,18 +4,14 @@ import pickle
 import scipy.stats
 import os
 
-
-##,warnings
-##,signal
-
 from scipy.optimize import curve_fit
-from tqdm import tqdm
 from lcfunctions import robustmean
 
 ##installed things
+from tqdm import tqdm
 import bls
 import mpyfit ##using mpyfit for the sliding window because its a C version and is incredibly fast compared to the python only version. Results are identical.
-
+import batman ## Kreidbergs BATMAN package
 
 
 np.set_printoptions(suppress=True)
@@ -2186,5 +2182,4 @@ def lomb_the_scargle(time,flux,prange=[0.1,40.0],snrcut = 5.0,fullreturn=False):
 
 
 
- 
  
