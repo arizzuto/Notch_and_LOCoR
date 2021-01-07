@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.lib.recfunctions import stack_arrays
 import copy
+import pdb
 
 class target:
     def __init__(self, label):
@@ -25,7 +26,7 @@ class target:
         self.data = lcfunctions.LCconvertCTL(self.rawdata,removebad=removebad)
         self.sector=sector_label
         
-    def load_data(time,flux,rawflux=[0],qual=[0],al=[0],source='user',sourcefile = 'user',sector_label='user',removebad=True):
+    def load_data(self,time,flux,rawflux=[0],qual=[0],al=[0],source='user',sourcefile = 'user',sector_label='user',removebad=True):
         '''
             Load data from user input, maybe their own thing?
             By default quality flags that are not zero (all good) get yeeted, set removebad=False to keep everything 
@@ -41,12 +42,12 @@ class target:
                 sourcefile ='user': If this data came from some file, save it here
                 sector_label='user': Did it come from a particular k2 or tess sector? Put that here
         '''
-        dl = len(lcdata)
+        dl = len(time)
         outdata         = np.recarray((dl,),dtype=[('t',float),('fraw',float),('fcor',float),('s',float),('qual',int),('divisions',float)])
         outdata.t = time
         outdata.fcor=flux 
         outdata.fraw[:]    = 0 
-        outdata.al[:]      = 0
+        outdata.s[:]      = 0
         #outdata.detrend[:] = 0
         outdata.qual[:]    = 0
         if len(rawflux) == len(flux): outdata.fraw = rawflux
