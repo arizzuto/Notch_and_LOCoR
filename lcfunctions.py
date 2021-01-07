@@ -1,5 +1,10 @@
 import numpy as np
 import core
+from lightkurve import search_lightcurvefile #to be deprecated soon, should use search_lightcurvefile. will need to update time array
+import os
+import interface as thymeNL #is this circular and bad?
+import pickle as pkl
+
 def LCconvertCTL(lcdata,removebad=True):
     ##convert to notch pipeline format inputs:
     ### This takes a tess 2min cadence lightcurve (from the bulk DL page for example)
@@ -154,8 +159,26 @@ def showmenotch(ontr=True):
     if ontr == False: trmod = polymod
     tpoint = np.argmin(np.absolute(np.median(t)-t))
     return t,lc,lc_All,fitpoly,trmod,tpoint,inout
-    
 
+def bulk_run(tic_list,download_dir):
     
+    for i,tic in enumerate(tic_list):
+        print("Working on object " + str(i+1) + "/" + str(len(tic_list)) + ".")
+        query_string = 'tic ' + str(tic)
+        target_name = 'tic' + str(tic)
+
+        lcf = search_lightcurvefile(target_name,mission = 'TESS').download()
+
+        lc_pdcsap = lcf.PDCSAP_FLUX.remove_nans().remove_outliers()
+        time = lc_pdcsap.time
+        flux = lc_pdcsap.flux
+        norm_flux = flux / np.median(flux)
+        
+        target = thymeNL.target(target_name)
+        target.load_data(time,flux)
+        target.run_notch(window=0.5,mindbic=-1.0)
+        
+        with open(os.path.join(download_dir,target_name + '.pkl'),'wb') as outfile:
+            pkl.dump(target,outfile)   
 
 
