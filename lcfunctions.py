@@ -138,8 +138,9 @@ def showmenotch(ontr=True):
     tr = np.ones(len(t),float)
     dp=0.01
     intr = np.where((t>0.5-2./24.) & (t<0.5+2./24.))[0]
-    if ontr == False: intr = np.where((t>0.75-2./24.) & (t<0.75+2./24.))[0]
-    inout = np.concatenate((inout,intr[2:-2]))
+    if ontr == False: 
+        intr = np.where((t>0.75-2./24.) & (t<0.75+2./24.))[0]
+        inout = np.concatenate((inout,intr[2:-2]))
     tr[intr] = 1.0 - dp
     #pdb.set_trace()
     lc_All = lc*tr + outl
