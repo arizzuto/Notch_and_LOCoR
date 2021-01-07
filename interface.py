@@ -41,7 +41,7 @@ class target:
                 sourcefile ='user': If this data came from some file, save it here
                 sector_label='user': Did it come from a particular k2 or tess sector? Put that here
         '''
-        dl = len(lcdata)
+        dl = len(time)
         outdata         = np.recarray((dl,),dtype=[('t',float),('fraw',float),('fcor',float),('s',float),('qual',int),('divisions',float)])
         outdata.t = time
         outdata.fcor=flux 
