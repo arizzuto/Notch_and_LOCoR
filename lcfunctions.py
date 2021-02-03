@@ -163,6 +163,19 @@ def showmenotch(ontr=True):
 def bulk_run(tic_list,download_dir):
     ##Aaron R. moved the lightkurve import here so that only users of bulk_run have to install it
     from lightkurve import search_lightcurvefile #to be deprecated soon, should use search_lightcurvefile. will need to update time array
+
+    '''
+    Function that does a "bulk run" of the notch pipeline on a provided list of targets.
+    Inputs: 1) a list of TIC ID's (tic_list) of the targets of interest in the form of either 
+    a Python list or a NumPy array, 2) a download directory path to the folder location in
+    which the results will be stored as pickled thymeNL interface objects with accompanying
+    notch attributes.
+    To be added:
+        -ability to choose TESS or K2 mission (adding epic_list instead of TIC LIST)
+        -ability to specify SAP or PDCSAP flux
+        -Causal Pixel Model (CPM) Functionality implemented with tess_cpm github repository 
+    '''
+
     for i,tic in enumerate(tic_list):
         print("Working on object " + str(i+1) + "/" + str(len(tic_list)) + ".")
         query_string = 'tic ' + str(tic)
