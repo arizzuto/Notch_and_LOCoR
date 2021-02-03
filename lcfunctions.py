@@ -1,6 +1,6 @@
 import numpy as np
 import core
-from lightkurve import search_lightcurvefile #to be deprecated soon, should use search_lightcurvefile. will need to update time array
+
 import os
 import interface as thymeNL #is this circular and bad?
 import pickle as pkl
@@ -161,7 +161,8 @@ def showmenotch(ontr=True):
     return t,lc,lc_All,fitpoly,trmod,tpoint,inout
 
 def bulk_run(tic_list,download_dir):
-    
+    ##Aaron R. moved the lightkurve import here so that only users of bulk_run have to install it
+    from lightkurve import search_lightcurvefile #to be deprecated soon, should use search_lightcurvefile. will need to update time array
     for i,tic in enumerate(tic_list):
         print("Working on object " + str(i+1) + "/" + str(len(tic_list)) + ".")
         query_string = 'tic ' + str(tic)

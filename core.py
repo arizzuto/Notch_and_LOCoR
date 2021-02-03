@@ -174,7 +174,7 @@ def transit_window4_slide_pyfit(p,args,model=False):
     if model == True: return themod,polyshape,transitshape,resid
     return resid
 
-def sliding_window(data,windowsize=0.5, use_arclength=False, use_raw=False,efrac=1e-3,resolvable_trans=False,cleanmask=[-1,-1],deltabic=-1.0,animator=False,animatorfunc=None):
+def sliding_window(data,windowsize=0.5, use_arclength=False, use_raw=False,efrac=1e-3,resolvable_trans=False,cleanmask=[-1,-1],deltabic=-1.0,animator=False,animatorfunc=None,show_progress=True):
     '''
     Sliding Window Notch-Filter
     
@@ -228,8 +228,12 @@ def sliding_window(data,windowsize=0.5, use_arclength=False, use_raw=False,efrac
     start=0
 
     if animator == True: start = animatorfunc
-
-    for i in tqdm(range(start,len(fittimes))):     
+    
+    if show_progress == True: 
+        itit = tqdm(range(start,len(fittimes)))
+    else: itit = range(start,len(fittimes))
+    
+    for i in itit:     
       
         ##grab the window
         wind     = np.where((data.t < fittimes[i]+wsize/2.0) & (data.t > fittimes[i]-wsize/2.0))[0]
@@ -1821,7 +1825,7 @@ def bls_transit_search(data,detrend,badflag,rmsclip=3.0,snrcut=7.0,cliplow = 30.
     
 
 ##wrapper function that runs the detrending in a controlled way, including reading/writing data.
-def do_detrend(cnum,epic,arclength=False, raw=False, wsize=1.0,totalfilename='', data_dir='/Volumes/UT2/UTRAID/K2raw/',outdir='',saveoutput=True,resolvabletrans=False,k2sff=False,indata=np.array([False,False]),idstring='',known_period=[-1,-1,-1],known_period2 = [-1,-1,-1],deltabic=-1.0,cleanup=False,period_matching=[-1,-1],snrcut=7.0,demode=1,max_period=30.0,min_period=1.00001,alias_num=2.0,tess=False):
+def do_detrend(cnum,epic,arclength=False, raw=False, wsize=1.0,totalfilename='', data_dir='/Volumes/UT2/UTRAID/K2raw/',outdir='',saveoutput=True,resolvabletrans=False,k2sff=False,indata=np.array([False,False]),idstring='',known_period=[-1,-1,-1],known_period2 = [-1,-1,-1],deltabic=-1.0,cleanup=False,period_matching=[-1,-1],snrcut=7.0,demode=1,max_period=30.0,min_period=1.00001,alias_num=2.0,tess=False,show_progress=True):
     '''
     Wrapper for running the notch filter and LOCoR detrending and BLS searches 
     
@@ -1881,7 +1885,7 @@ def do_detrend(cnum,epic,arclength=False, raw=False, wsize=1.0,totalfilename='',
         
     ##run the detrending sliding notch fitter, LOCoR, or Something Else???!?
     print('Running Detrend')
-    if demode == 1: fittimes, depth, detrend,polyshape,badflag = sliding_window(data,windowsize=wsize,use_arclength=arclength,use_raw=raw,deltabic=deltabic,resolvable_trans=resolvabletrans,cleanmask=transmask) ##Notch Filter
+    if demode == 1: fittimes, depth, detrend,polyshape,badflag = sliding_window(data,windowsize=wsize,use_arclength=arclength,use_raw=raw,deltabic=deltabic,resolvable_trans=resolvabletrans,cleanmask=transmask,show_progress=show_progress) ##Notch Filter
     if demode == 2: fittimes,depth,detrend,polyshape,badflag = rcomb(data,wsize,cleanmask=transmask,aliasnum=alias_num) ##LOCoR
     
     
