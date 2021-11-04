@@ -49,7 +49,7 @@ INSTALL_REQUIRES = [
 setup(
     name='Notch_and_LoCoR',
     version=__version__,
-    description=('Notch and LoCoR fork -- implementation by THYME team.'),
+    description=('Notch and LoCoR fork -- implementation by Aaron Rizzuto & the THYME team.'),
     long_description=readme(),
     long_description_content_type="text/markdown",
     classifiers=[
@@ -67,12 +67,8 @@ setup(
     license='MIT',
     packages=[
         'notch_and_locor',
-        'notch_and_locor.core',
-        'notch_and_locor.interface',
-        'notch_and_locor.lcfunctions',
     ],
     install_requires=INSTALL_REQUIRES,
-    extras_require=EXTRAS_REQUIRE,
     tests_require=['pytest==3.8.2',],
     cmdclass={'test':PyTest},
     include_package_data=True,
