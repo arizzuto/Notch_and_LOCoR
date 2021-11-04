@@ -44,19 +44,19 @@ def construct_planet_signal(time,per,rp,b,t0,ecc,omega,mstar,rstar,oversample=20
     ---------
         batman_lc: A numpy array of the same size as the input time array containing the model lightcurve. By default it's baseline normalised to 1.
     '''
-    
+
     ##exposure time in days
     time_exp = exposure_time/60.0/24.0
-    
+
     ##convert planet radiuss in earth units to rp/rs
     rearth = 0.009154
     rprs = rp*rearth/rstar
-    
+
     #convert to inclination and semimajor axis from period and impact_par using rstar,mstar
     semia = (mstar*(per/365.25)**2)**(1.0/3.0)*214.939469384/rstar
     inc   = np.arccos(b/semia)*180.0/np.pi ##in degrees as batman likes it
     #tdur  = per/np.pi*np.arcsin(np.sqrt(((1+rprs)**2 - b**2)/(1-np.cos(inc*np.pi/180)**2))/semia)*24.0 ##for testing
-    
+
     ##set batman parameters
     params           = batman.TransitParams()
     params.t0        = t0
@@ -71,14 +71,14 @@ def construct_planet_signal(time,per,rp,b,t0,ecc,omega,mstar,rstar,oversample=20
 
     ##initialize batman
     batman_model = batman.TransitModel(params,time,supersample_factor=oversample,exp_time=time_exp)
-    
+
     ##calculate the light curve
     batman_lc    = batman_model.light_curve(params)
 
     ##output the light curve
     return batman_lc
- 
- 
+
+
 def inject_recover_tess(data,per,rp,impact,t0,ecc,omega,mstar,rstar,windowsize=1.0,demode=1,alias_num=2.0,min_period=1.00001,max_period=15.0,forcenull=False,exposuretime=None,ldpars=[0.4,0.3],oversample=20):
     '''
     Function that takes a single case, and does the injection/recovery test calling construct_planet_signal to build the injected model
@@ -101,10 +101,10 @@ def inject_recover_tess(data,per,rp,impact,t0,ecc,omega,mstar,rstar,windowsize=1
     min_period=1.0: minimum bls search period in days
     max_period=15.0: maximum bls search period in days
     forcenull=False: If true, always will reject the notch model, for testing purposes.
-    exposuretime=None: The exposure time in minutes of your input data. If None, will compute the most common time between data points and use that 
+    exposuretime=None: The exposure time in minutes of your input data. If None, will compute the most common time between data points and use that
     ldpars=[0.4,0.3]: quadratic limb darkening parameters to use for star model
     oversample=20: oversample rate for batman, 20 is usually ok
-    
+
     OUTPUTS:
     --------
     detected_it: 1 if recovered, 0 if not
@@ -112,7 +112,7 @@ def inject_recover_tess(data,per,rp,impact,t0,ecc,omega,mstar,rstar,windowsize=1
     dett0: recovered T0 if recovered
     detdp: recovered depth if recovered (not trustable, and meaningless if BIC search was run).
     '''
-    
+
     ##if exposuretime is not provided
     if exposuretime is None: exposuretime = scipy.stats.mode(data.t-np.roll(data.t,1))[0][0]*24.0*60.0 ##just find the most common time between datapoints
     ##Build the synthetic transit signal with BATMAN
@@ -123,14 +123,14 @@ def inject_recover_tess(data,per,rp,impact,t0,ecc,omega,mstar,rstar,windowsize=1
     ##now inject the planet signal into the rawdata aperture photometry, this happens to be easy
     udata.fcor = udata.fcor*injflux
     udata.fraw = udata.fraw*injflux
-    
+
     ##now run the appropriate detrending algorithm
-    if forcenull == False: 
+    if forcenull == False:
         usedeltabic=-1.0
     else: usedeltabic = np.inf
     detected_it,detp,dett0,detdp = core.do_detrend(-1,-1,arclength=False, raw=False, wsize=windowsize,saveoutput=False,resolvabletrans=False,k2sff=False,indata=udata,period_matching = [per,exp_depth,t0],demode=demode,deltabic=usedeltabic,min_period=min_period,max_period = max_period,alias_num=alias_num,tess=True,show_progress=False)
-    
-    
+
+
     return detected_it,detp,dett0,detdp
 
 
@@ -140,11 +140,11 @@ def injrec_tesslist_mpi(tic,pointlist,rawdata,mstar,rstar,ids,thisrank=-1,machin
     THis function takes lists of parameters for trial planets and call inject_recover_tess multiple times, handling the output into a big array.
     See tess_injrec_mpi.py for usage example.
     Currently logging is commented out as its not general for everyone's system setup.
-    
+
     '''
     ##open a log file to write to, not efficient but maybe worth it for bugshooting
     homedir = os.getenv("HOME")
-    
+
     #if machinename == 'laptop': logfile = open('logfiles/logfile_main.txt','ab')
     #if machinename != 'laptop': logfile = open(homedir +'/project/K2pipe/logfiles/logfile_'+jobname+'_' + str(thisrank)+'.txt','ab')
     #logfile.write(str(thisrank) + ' ' + str(epic) + ' \n')
@@ -154,7 +154,7 @@ def injrec_tesslist_mpi(tic,pointlist,rawdata,mstar,rstar,ids,thisrank=-1,machin
 
         #logfile.write(str(i)+'_'+str(thisrank) +' ' +str(pointlist[i,0]) + ' ' +str(pointlist[i,1])+ ' ' +str(pointlist[i,2])+ ' ' +str(pointlist[i,3]) + ' ' +str(pointlist[i,4]) + ' ' +str(pointlist[i,5]) + ' ' +str(pointlist[i,6]) + ' \n')
         #logfile.flush()
-        
+
         ##run the inject_test on this particular planet, wrap in error catcher so that exceptions can be diagnostic
         ##The code with exception catch
         thisdetect,detp,dett0,detdp = inject_recover_tess(rawdata,pointlist[i,0],pointlist[i,1],pointlist[i,2],pointlist[i,3]*pointlist[i,0]+rawdata.t[0],pointlist[i,4], pointlist[i,5],mstar,rstar,windowsize=wsize,demode=demode,forcenull=forcenull,alias_num=alias_num,min_period=min_period,max_period=max_period)
@@ -165,7 +165,7 @@ def injrec_tesslist_mpi(tic,pointlist,rawdata,mstar,rstar,ids,thisrank=-1,machin
 #         ##make it known we reached the last one
         #logfile.write('ddd')
         #logfile.flush()
-            
+
        ##Everything is fine, output the right way
         wedet=0
         if thisdetect == True:  wedet = 1
@@ -173,21 +173,21 @@ def injrec_tesslist_mpi(tic,pointlist,rawdata,mstar,rstar,ids,thisrank=-1,machin
         pointlist[i,7] = detp
         pointlist[i,8] = dett0
         pointlist[i,9] = detdp
-    
+
     ##logfile.close
     return pointlist, 1
-    
+
 def smooth(x,window_len,win='flat',simsize=True):
 
 ##pad the signal:
     s = np.r_[x[window_len-1:0:-1],x,x[-1:-window_len:-1]]
 
 ##make up the window
-    if not win in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']: 
+    if not win in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
         print('I dont known that type of window bro')
         print('Use: flat, hanning, hamming, bartlett, blackman')
         pdb.set_trace()
-    
+
     if win == 'flat':
         w=np.ones(window_len,'d') ##makes a moving average over this window length
     else:
@@ -196,12 +196,12 @@ def smooth(x,window_len,win='flat',simsize=True):
 
 
     y=np.convolve(w/w.sum(),s,mode='valid')
-    
+
     if simsize == True:
         y = y[int((window_len-1)/2):int(len(y)-(window_len-1)/2)]
 
-    return y    
-    
+    return y
+
 def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],extratag = '',numbins=15, oldfile=False)    :
 
     import matplotlib.pyplot as plt
@@ -233,12 +233,12 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
     for i in range(len(files)):
         ijtup = ()
         #pdb.set_trace()
-        
+
         if oldfile == False:ijlist,thisepic,cnum = pickle.load(open(files[i],'rb'))
         if oldfile == True: ijlist,thisepic,cnum = pickle.load(open(files[i],'rb'),encoding='latin1')
-       
 
-        namestr = files[i].split('/')[1].split('.pkl')[0]  + '_'+extratag  
+
+        namestr = files[i].split('/')[1].split('.pkl')[0]  + '_'+extratag
         if targetname != '': namestr=targetname
         if extratag != '' : namestr  += '_'+extratag
 
@@ -271,7 +271,7 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
         rfrac = fhisto/thisto
         binx = fxedge[0:len(fxedge)-1] + fxedge[1]/2. - fxedge[0]/2.
         biny = fyedge[0:len(fyedge)-1] + fyedge[1]/2. - fyedge[0]/2.
-        xp,yp = np.meshgrid(binx,biny) 
+        xp,yp = np.meshgrid(binx,biny)
         xx = xp.flatten()
         yy = yp.flatten()
         rr = rfrac.flatten()
@@ -283,7 +283,7 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
         pointlist = np.zeros((len(xx),2),float)
         pointlist[:,0] = xx
         pointlist[:,1] = yy
-    
+
         myinterp = nninterp(pointlist,rr)
         xi = np.linspace(plims[0],plims[1],100)
         yi = np.linspace(rlims[0],rlims[1],100)
@@ -297,7 +297,7 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
         fig,ax = plt.subplots()
         plt.imshow(zz.T,origin='lower',aspect='auto',interpolation='none',extent=[plims[0],plims[1],rlims[0],rlims[1]],cmap='cubehelix')
         cb= plt.colorbar()# (generate plot here)
-    
+
         tick_locator = ticker.MaxNLocator(nbins=5)
         cb.locator = tick_locator
         cb.update_ticks()
@@ -316,7 +316,7 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
         plt.tight_layout()
         plt.gcf().subplots_adjust(left=0.15)
         plt.savefig(outdir + str(thisepic)+'_'+str(i)+'_'+namestr+'_interpolation.pdf')
-    
+
         ##now make one that has both things on the plot
         for j in range(len(ijlist)):
             fmt = '.r'
@@ -326,7 +326,7 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
         ax.set_ylim(rlims)
         for pl in detected_planets:
             ax.plot(pl[0],pl[1],'*',markerfacecolor='lime',markeredgecolor='k',markeredgewidth=2,markersize=25)
-        
+
         labelname = 'TIC' + str(thisepic)
         if targetname != '' : labelname = targetname
         ax.text(1.6,9.2,labelname,backgroundcolor='w')
@@ -349,14 +349,14 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
         for i in range(len(plist)):
             theselims = np.interp(levels,zz[i],rgrid)
             lims[i] = theselims*1.0
-        
-       
-    
-    
-    
+
+
+
+
+
         #pdb.set_trace()
         figl,axl = plt.subplots()
-        axl.plot(plist,smooth(lims[:,0],9),'k',label='50%') 
+        axl.plot(plist,smooth(lims[:,0],9),'k',label='50%')
         axl.plot(plist,smooth(lims[:,1],9),'b',label='80%')
         axl.plot(plist,smooth(lims[:,2],9),'r',label='90%')
         axl.legend()
@@ -364,28 +364,28 @@ def plot_ijresults(files,targetname = '',outdir = './',detected_planets = [],ext
         axl.set_xlabel('Planet Period (days)')
         plt.tight_layout()
         figl.savefig(outdir + str(thisepic)+'_'+str(i)+'_'+namestr+'_simplelims.pdf')
-        
+
         l10   = np.where(plist <= 10)[0]
         l1020 = np.where((plist > 10) & (plist < 20))[0]
         l2030 = np.where((plist >= 20) & (plist < 25))[0]
-    
+
         lim10 = np.mean(lims[l10],axis=0)
         lim20 = np.mean(lims[l1020],axis=0)
         lim30 = np.mean(lims[l2030],axis=0)
-    
+
         plt.close('all')
 
 
-    
 
-        
-    
-    
+
+
+
+
 
     print('DONE')
 
 
-    
-    
-    
-    
+
+
+
+

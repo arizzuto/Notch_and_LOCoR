@@ -1,7 +1,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib as mpl 
+import matplotlib as mpl
 import pickle
 import sys,os
 import time
@@ -33,7 +33,7 @@ rearth = 0.009154
 
 
 '''
-This script runs a large injection recovery test over a grid of planet parameters for a given star. 
+This script runs a large injection recovery test over a grid of planet parameters for a given star.
 Currently setup for HIP67522 but is completely general otherwise.
 
 Requires a working version of Message Passing Interface (MPI). I suggest OPENMPI
@@ -42,7 +42,7 @@ machine with multiple cores/threads.
 
 On a unix system with openmpi installed, use the following to call the script:
 
-mpiexec -n N python tess_injrec_mpi.py 
+mpiexec -n N python tess_injrec_mpi.py
 
 where N is the number of processes you want to involve.
 For bugshooting use N=1 to start with
@@ -86,16 +86,16 @@ forcenull=False
 jobid        = str(target_name)
 datestamp    = time.strftime('%Y%m%d-%H:%M:%S', time.localtime(time.time())) ##output with starting timestamp so all runs are distinguishable
 
-if rank == 0: 
+if rank == 0:
     if demode ==1 : print('Mode is Notch')
     if demode ==2 : print('Mode is LOCoR')
-    if (demode != 1) & (demode != 2) : 
+    if (demode != 1) & (demode != 2) :
         print('detrend mode (demode) set incorrectly')
         comm.Abort() ##This ends the mpi processes
 
 
 ##Determine how many test each core is doing based on how many test in total are wanted per star
-npl = 2##1008 is divisible by a multiple of 24 so cores arent wasted, if you set this to 1 it will fail later, 
+npl = 2##1008 is divisible by a multiple of 24 so cores arent wasted, if you set this to 1 it will fail later,
 
 ##figure out tests per process
 s   = npl/ncor
@@ -103,7 +103,7 @@ nx  = (s+1)*ncor - npl
 ny  = npl - s*ncor
 if rank <= nx-1: mynumber = int(s)
 if rank > nx-1: mynumber = int(s)+1
-    
+
 ##now it's clear how many test are running on each processor, tell the user
 if rank == 0: print('Using ' + str(nx) + ' cores of size ' + str(s) + ' and ' +str(ny) + ' cores of size ' + str(s+1))
 
@@ -116,7 +116,7 @@ comm.barrier()
 ##now create an output directory for the results, should be unique:
 if rank == 0:
     outdirname = basedir+outdir + jobid+ '_' + str(demode) + '_'+datestamp
-   
+
     while os.path.exists(outdirname):##keep adding more stuff to name until directory is uniquem shouldn;'t happen at all as far as I can tell
         outdirname += '_1'
     os.makedirs(outdirname)
@@ -129,7 +129,7 @@ ticname = ticnum
 sector = 11
 sect = 'S11'
 
-    
+
 
 if demode == 2:
     windowsize = thisprot*1.0
@@ -141,9 +141,9 @@ if demode == 1:
 if rank == 0 :print('mass/rad/win ', mstar,rstar,windowsize)
 
 if (mstar > 0.0) & (rstar > 0.0) & (windowsize > 0.0): ##Make sure we have a mass,radius and windowsize estimate
-    
+
     ##only happens once per epic
-    ##probably should only be done by one core then broadcasted out to the others: 
+    ##probably should only be done by one core then broadcasted out to the others:
     if rank == 0:
         hip67522 = thymeNL.target(target_name)
         hip67522.load_data_tess(datafile)
@@ -157,7 +157,7 @@ if (mstar > 0.0) & (rstar > 0.0) & (windowsize > 0.0): ##Make sure we have a mas
     ##a more complicated distribution to sample, half normal, with half beta-2/6, this puts the meat of the distribution around 2-4 R-earth, which is the key area for most systems
     ttt = np.mod(rank,2)
     ##because we are doing half/half normal and beta, decide what to do if number of samples is odd.
-    if ttt == 1: 
+    if ttt == 1:
         nnn1 = int(np.ceil(mynumber/2.))
         nnn2 = mynumber/2
     else:
@@ -170,18 +170,18 @@ if (mstar > 0.0) & (rstar > 0.0) & (windowsize > 0.0): ##Make sure we have a mas
     binj_vect = np.random.uniform(low=0.0,high=1.0,size=mynumber)
     einj_vect = np.zeros(mynumber,dtype=float)
     winj_vect = np.zeros(mynumber,dtype=float)
- 
+
     ##turn it all into a list of points, with final parameter being the detection flag
     ##note this list is process dependent
     ijlist    = np.transpose(np.array([pinj_vect,rpinj_vect,binj_vect,phase_vect,einj_vect,winj_vect,pinj_vect*0.0,pinj_vect*0.0,pinj_vect*0.0,pinj_vect*0.0]))
-    
+
     ##when testing using a normal computer, put a particular planet setup here
     #ijlist[0] = np.array([2.86677240736 ,8.58210005063 ,0 ,0.201926319663, 0.0 ,0.0 ,0.0,0.0,0.0,0.0])
     #ijlist = ijlist[0:1]
     #print ijlist.shape
     #injrec_tesslist_mpi(epic,pointlist,rawdata,mstar,rstar,ids,thisrank=-1,machinename='laptop',jobname='',
     #                wsize=1.0,demode=1,forcenull=False,alias_num=2.0,min_period=1.0001,max_period=12.0):
-    
+
     ##run the injection-recovery on the local grid, ecode of -1 is a fail
     ij_result,ecode = IJ.injrec_tesslist_mpi(ticname,ijlist,rawdata,mstar,rstar,ids,thisrank=-1,
                     wsize=windowsize,demode=demode,forcenull=forcenull,alias_num=0.5,min_period=1.0001,max_period=20)
@@ -193,7 +193,7 @@ if (mstar > 0.0) & (rstar > 0.0) & (windowsize > 0.0): ##Make sure we have a mas
         exceptfile.flush()
         exceptfile.close()
         comm.Abort()
-    
+
     ###again, for testing on desktops, print the output and kill the process
     #print ij_result
     #comm.Abort()
@@ -206,9 +206,9 @@ if (mstar > 0.0) & (rstar > 0.0) & (windowsize > 0.0): ##Make sure we have a mas
         for nn in range(1,size):
             newstuff    = comm.recv(source=ANY_SOURCE)
             finalresult = np.append(finalresult,newstuff,axis=0)
-                   
+
     ##if not root process, just send your result list
-    else: 
+    else:
         comm.send((ij_result),0)
 
     ##if you are root process and everything is finished, output a pkl file of the result list
@@ -219,7 +219,7 @@ if (mstar > 0.0) & (rstar > 0.0) & (windowsize > 0.0): ##Make sure we have a mas
         outputter = open(outdirname + '/tic'+str(ticname)+'_ijmc_'+jobid+'_'+datestamp+'_'+str(windowsize)+'.pkl','wb')
         pickle.dump((finalresult,ticname,sector),outputter)
         outputter.close()
-        ##now write to the log file 
+        ##now write to the log file
         #ijlog.write(str(thisepic) +' '  + str(nd) +' ' + str(ndf) +' ' + str(gradmode) +' ' + str(windowsize) +' ' + str(demode) + ' ' + str(mstar) + ' ' + str(rstar) +' \n')
         #ijlog.flush()
 
@@ -234,7 +234,7 @@ if (mstar > 0.0) & (rstar > 0.0) & (windowsize > 0.0): ##Make sure we have a mas
 
 ##if everything is finished, abort
 comm.barrier()
-if rank == 0: 
+if rank == 0:
     ijlog.close()
     print('All Done')
     comm.Abort()
