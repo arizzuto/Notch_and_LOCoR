@@ -32,12 +32,9 @@ def do_detrend(cnum, epic, arclength=False, raw=False, wsize=1.0,
 
     Inputs:Coming soon
 
-
     Optional Inputs:Coming soon, lots
 
-
     Outputs: Coming soon, lots of options
-
     '''
 
     if type(indata[0]) != type(np.array([False])[0]):
@@ -419,40 +416,60 @@ def transit_window4_slide_pyfit(p, args, model=False):
     return resid
 
 
-def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False, efrac=1e-3, resolvable_trans=False, cleanmask=[-1, -1], deltabic=-1.0, animator=False, animatorfunc=None, show_progress=True):
+def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
+                   efrac=1e-3, resolvable_trans=False, cleanmask=[-1, -1],
+                   deltabic=-1.0, animator=False, animatorfunc=None,
+                   show_progress=True):
     '''
     Sliding Window Notch-Filter
 
-    THis code takes a lightcurve and applies the notch-filter method to remove rotation and preserve trasits.
+    This code takes a lightcurve and applies the notch-filter method to remove
+    rotation and preserve trasits.
 
     Inputs:
     (1) data: The data recarray that this code uses for passing data around
 
     Optional Inputs:
+
     (1) windowsize: Detrending window size in days, default is 0.5 days.
-    (2) use_arclength: Set to True to do a full fit over time and arclength, default is False
-    (3) use_raw: Set to True to use raw data that is uncorrected for K2 pointing systematics. Default is False
-    (4) efrac: starting fractional uncertainty on the lightcurve data. Default is 1mmag. This value is dynamically determined in each fitting window
+
+    (2) use_arclength: Set to True to do a full fit over time and arclength,
+    default is False
+
+    (3) use_raw: Set to True to use raw data that is uncorrected for K2
+    pointing systematics. Default is False
+
+    (4) efrac: starting fractional uncertainty on the lightcurve data. Default
+    is 1mmag. This value is dynamically determined in each fitting window
     and so should only be change if extreme circumstances.
-    (4) resolvable_trans: Set to not use the 45 min transit window trail. Default is False.
-    (5) cleanmask: binary mask to remove a set of points from the fitting. Great for masking over a transit signal that you
-    dont want influencing the fit. Default is [-1, -1] which turns it off
-    (6) detlabic: Bayesian information cirterion difference between the transit and no-transit model required to select the transit model. A higher value
-    indicates more required evidence. Default is -1.0, which is at least equal evidence with a ~1 margin for uncertainty. Set to np.inf to always choose the null model
-    or -np.inf to always choose the transit model.
+
+    (4) resolvable_trans: Set to not use the 45 min transit window trail.
+    Default is False.
+
+    (5) cleanmask: binary mask to remove a set of points from the fitting.
+    Great for masking over a transit signal that you dont want influencing the
+    fit. Default is [-1, -1] which turns it off
+
+    (6) detlabic: Bayesian information cirterion difference between the transit
+    and no-transit model required to select the transit model. A higher value
+    indicates more required evidence. Default is -1.0, which is at least equal
+    evidence with a ~1 margin for uncertainty. Set to np.inf to always choose
+    the null model or -np.inf to always choose the transit model.
 
     Outputs:
     (1) Times: The input time axis from data
-    (2) depths: notch filter depths at each point in the lightcurve. zero when null model chosen
+
+    (2) depths: notch filter depths at each point in the lightcurve. zero when
+    null model chosen
+
     (3) detrend: detrended lightcurve
+
     (4) polyshape: the model used to detrend the input lightcurve
-    (5) badflag: integer flags for each datapoint in data with 0=fine
-        1=masked as outlier in iterations at least once but still fine, 2=strong positive outlier or other suspect point.
+
+    (5) badflag: integer flags for each datapoint in data with 0=fine 1=masked
+    as outlier in iterations at least once but still fine, 2=strong positive
+    outlier or other suspect point.
     '''
-
-
-
-
 
     import time
     wsize  = windowsize
@@ -472,7 +489,8 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False, efr
     #storepos   = np.zeros(len(data.t), int)
     start=0
 
-    if animator == True: start = animatorfunc
+    if animator == True:
+        start = animatorfunc
 
     if show_progress == True:
         itit = tqdm(range(start, len(fittimes)))
