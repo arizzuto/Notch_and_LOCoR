@@ -13,14 +13,262 @@ import bls
 import mpyfit ##using mpyfit for the sliding window because its a C version and is incredibly fast compared to the python only version. Results are identical.
 import batman ## Kreidbergs BATMAN package
 
-
 np.set_printoptions(suppress=True)
 
-##this file contains all the functions for the k2 detrending and injection-recovery testing
-##it only contains function, so do
-##import detrent_k2
-##then to run things to .function()
-##does not include k2sff (thats in k2sff.py)
+def do_detrend(cnum, epic, arclength=False, raw=False, wsize=1.0,
+               totalfilename='', data_dir='/Volumes/UT2/UTRAID/K2raw/',
+               outdir='', saveoutput=True, resolvabletrans=False, k2sff=False,
+               indata=np.array([False, False]), idstring='', known_period=[-1,
+               -1, -1], known_period2 = [-1, -1, -1], deltabic=-1.0,
+               cleanup=False, period_matching=[-1, -1], snrcut=7.0, demode=1,
+               max_period=30.0, min_period=1.00001, alias_num=2.0, tess=False,
+               show_progress=True):
+
+    '''
+    Wrapper for running the notch filter and LOCoR detrending and BLS searches
+    "It does this in a controlled way, including reading/writing data."
+
+    Currently the inputs are not ideal, theres some decluttering to do...
+
+    Inputs:Coming soon
+
+
+    Optional Inputs:Coming soon, lots
+
+
+    Outputs: Coming soon, lots of options
+
+    '''
+
+    if type(indata[0]) != type(np.array([False])[0]):
+        data = indata.copy() ## the case where we passed the data directly
+
+    ##if we know where the planet is and want to aggressively detrend with a transit mask
+    ##make a mask array for use in sliding window
+    transmask=[-1, -1]
+    if (known_period[0] != -1) & (cleanup == True):
+        kphase = calc_phase(data.t, known_period[0], known_period[1])
+        keep   = np.where((kphase < known_period[2]) | (kphase > known_period[3]))[0]
+        transmask = np.zeros(len(kphase), dtype=int)+99
+        transmask[keep] = 0
+
+    ##run the detrending sliding notch fitter, LOCoR, or Something Else???!?
+    print('Running Detrend')
+    if demode == 1:
+        fittimes, depth, detrend, polyshape, badflag = (
+            sliding_window(
+                data, windowsize=wsize, use_arclength=arclength, use_raw=raw,
+                deltabic=deltabic, resolvable_trans=resolvabletrans,
+                cleanmask=transmask, show_progress=show_progress
+            ) ##Notch Filter
+        )
+
+    if demode == 2:
+        fittimes, depth, detrend, polyshape, badflag = (
+            rcomb(
+                data, wsize, cleanmask=transmask, aliasnum=alias_num
+            ) ##LOCoR
+        )
+
+    ##for the cleanup case, don't bother with trying to find transits:
+    if cleanup == True:
+        return fittimes, depth, detrend, polyshape, badflag
+
+    ##run the bls search, rmsclip should really be =1
+    if period_matching[0] < 0:
+        best_p, dp, t0, detsig, firstpower, pgrid, firstphase, dcyc = (
+            bls_transit_search(data, detrend, badflag, rmsclip=1.5,
+                               snrcut=snrcut, period_matching=period_matching,
+                               searchmax=max_period, searchmin=min_period)
+        )
+        ## now clean out high-arclength points in each division, then retry
+
+        divs = np.unique(data.divisions).astype(int)
+        if tess == False:
+            runmask = np.zeros(len(data.t), int)
+            for dd in range(len(divs)):
+                thisdiv = np.where(data.divisions == divs[dd])[0]
+                ##kill 5 % on each side
+                keep = np.where(
+                    (data.s[thisdiv] < np.percentile(data.s[thisdiv], 96)) &
+                    (data.s[thisdiv] > np.percentile(data.s[thisdiv], 4))
+                )[0]
+                runmask[thisdiv[keep]] = 1
+
+            gomask = np.where(runmask == 1)[0]
+
+        if (len(divs) == 1) | (tess == True):
+            print( 'skipping gomask search')
+        ##now rerun BLS with these good points only
+        if (len(divs) > 1) & (tess == False):
+            best_p2, dp2, t02, detsig2, firstpower, pgrid2, firstphase, dcyc2 = (
+                bls_transit_search(data[gomask], detrend[gomask],
+                                   badflag[gomask], rmsclip=1.5, snrcut=snrcut,
+                                   period_matching=period_matching,
+                                   searchmax=max_period, searchmin=min_period)
+            )
+
+            best_p = np.concatenate((best_p2, best_p))
+            dp = np.concatenate((dp2, dp))
+            t0 = np.concatenate((t02, t0))
+            detsig = np.concatenate((detsig2, detsig))
+            dcyc = np.concatenate((dcyc2, dcyc))
+
+
+        ##for the demode=2 case, run again with all detrend outliers clipped
+        if (demode == 2) | (demode == 3):
+            gomask = np.where(badflag == 1)[0]
+            best_p3, dp3, t03, detsig3, firstpower3, pgrid3, firstphase, dcyc3 = (
+                    bls_transit_search(data[gomask], detrend[gomask],
+                                       badflag[gomask], rmsclip=1.5,
+                                       snrcut=snrcut,
+                                       period_matching=period_matching,
+                                       searchmax=max_period,
+                                       searchmin=min_period)
+            )
+            best_p = np.concatenate((best_p, best_p3))
+            dp = np.concatenate((dp, dp3))
+            t0 = np.concatenate((t0, t03))
+            detsig = np.concatenate((detsig, detsig3))
+            dcyc = np.concatenate((dcyc, dcyc3))
+
+
+    ##injection recovery input matching section here:
+    if period_matching[0] > 0:
+        pmatch_result =  (
+            bls_transit_search(data, detrend, badflag, rmsclip=1.0,
+                               snrcut=snrcut, period_matching=period_matching,
+                               searchmax=max_period, searchmin=min_period)
+        )
+        #now run additional searches if the standard one fails to get you your planet back
+        if pmatch_result[0] == 0:
+
+            if (tess == True) & ((demode == 1) | (demode == 5)): ##run the deltabic search, only for notch pipe
+                print('Doing BIC Mode')
+                bicstat = depth[1]-np.median(depth[1])
+                bicstat = 1- bicstat/np.max(bicstat)
+                pmatch_result =  (
+                    bls_transit_search(data, bicstat, badflag, rmsclip=1.0,
+                                       snrcut=snrcut,
+                                       period_matching=period_matching,
+                                       searchmax=max_period,
+                                       searchmin=min_period, datamode='bic')
+                )
+
+            ##now clean out high-arclength points in each division, then retry
+            divs = np.unique(data.divisions).astype(int)
+            if tess == False:
+                divs = np.unique(data.divisions)
+                runmask = np.zeros(len(data.t), int)
+                for dd in range(len(divs)):
+                    thisdiv = np.where(data.divisions == divs[dd])[0]
+                    ##kill 4% on each side
+                    keep = (
+                        np.where((data.s[thisdiv] <
+                                  np.percentile(data.s[thisdiv], 96)) &
+                                 (data.s[thisdiv] >
+                                  np.percentile(data.s[thisdiv], 4)))[0]
+                    )
+                    runmask[thisdiv[keep]] = 1
+                ##now run with the new arclength mask for each division
+
+                gomask = np.where(runmask == 1)[0]
+
+            if len(divs) == 1 | (tess == True): print( 'skipping gomask search')
+           ## print tess
+            if (len(divs) > 1) & (tess == False):
+                pmatch_result =  (
+                    bls_transit_search(data[gomask], detrend[gomask],
+                                       badflag[gomask], rmsclip=1.0,
+                                       snrcut=snrcut,
+                                       period_matching=period_matching,
+                                       searchmax=max_period,
+                                       searchmin=min_period)
+                )
+
+            ##for demode=2 case, run again with all detrend outliers clipped, if still not finding injected signal
+            if (pmatch_result[0] == 0) & (demode == 2): ##for tess and not tess
+                gomask = np.where(badflag==1)[0]
+                pmatch_result =  (
+                    bls_transit_search(data[gomask], detrend[gomask],
+                                       badflag[gomask], rmsclip=1.0,
+                                       snrcut=snrcut,
+                                       period_matching=period_matching,
+                                       searchmax=max_period,
+                                       searchmin=min_period)
+                )
+
+        return pmatch_result
+
+    ##if not saving the output, return useful variables
+    if saveoutput == False:
+        return (data, fittimes, depth, detrend, polyshape, badflag, pgrid,
+                firstpower, firstphase, detsig, best_p, dp, t0, dcyc)
+
+    ##start outputting here, if instructed to, this makes outputfiles and lots of plots
+    if saveoutput == True:
+        mmm = np.ones(len(data.t), dtype=int)
+        bad = np.where(((data.s<0.0) | (data.s>8)) & (detrend<0.99) | (detrend <=0.0))[0]
+        mmm[bad] = 0
+
+        ##remove other high points, they can hid transits from BLS
+        lcrms = np.sqrt(np.nanmean((1.0-detrend)**2))
+        good = np.where((badflag < 2)  & (mmm == 1) & (detrend < 2**lcrms+1.0))[0]
+        import matplotlib.pyplot as plt
+        savefile = outdir+'detrend_EPIC'+str(epic)+'.pkl'
+        if tess == True: savefile = outdir+'detrend_TIC'+str(epic)+'_'+str(cnum)+'.pkl'
+
+        pickle.dump((data, fittimes, depth, detrend, polyshape, badflag, pgrid, firstpower, firstphase, detsig, best_p, dp, t0, dcyc), open(savefile, 'wb'))
+        ##save the detrended LC regardless of the presence of a detection:
+        #unphased plot
+        plt.plot(data.t[good]-data.t[0], detrend[good], '.')
+        ax = plt.subplot(111)
+        ax.set_ylim([np.max([0.98, np.min(detrend[good])-0.001]), np.min([np.max(detrend[good])+0.001, 1.01])])
+        ax.set_xlabel('Time (days)')
+        ax.set_ylabel('Relative Brightness')
+        xlab = ax.xaxis.get_label()
+        ylab = ax.yaxis.get_label()
+        xlab.set_weight('bold')
+        xlab.set_size(12)
+        ylab.set_weight('bold')
+        ylab.set_size(12)
+        [i.set_linewidth(2) for i in ax.spines.itervalues()]
+        ax.xaxis.set_tick_params(width=2, labelsize=10)
+        ax.yaxis.set_tick_params(width=2, labelsize=10)
+        if tess == False: plt.savefig(figdir + 'detrend_EPIC'+str(epic)+'.pdf')
+        if tess == True: plt.savefig(figdir + 'detrend_TIC' + str(epic) +'_'+str(cnum)+'.pdf')
+        plt.clf()
+
+        ##if a reasonable planet detection is found
+        ##phased plot
+        if (detsig[0] > snrcut):
+            for cnt in range(len(detsig)):
+                if detsig[cnt] >= 7.0:
+                    detection = 1
+                    thisphase = calc_phase(data.t, best_p[cnt], t0[cnt])
+                    plt.plot(thisphase[good], detrend[good], '.')
+                    ax = plt.subplot(111)
+                    ax.set_ylim([np.max([0.98, np.min(detrend[good])-0.001]), np.min([np.max(detrend[good])+0.001, 1.01])])
+                    ax.set_xlabel('Phase (P=' + str(np.round(best_p[cnt], decimals=4)) + ' days, ' +str(np.round(detsig[cnt], decimals=1)) + '-sigma)')
+                    ax.set_ylabel('Relative Brightness')
+                    xlab = ax.xaxis.get_label()
+                    ylab = ax.yaxis.get_label()
+                    xlab.set_weight('bold')
+                    xlab.set_size(12)
+                    ylab.set_weight('bold')
+                    ylab.set_size(12)
+                    [i.set_linewidth(2) for i in ax.spines.itervalues()]
+                    ax.xaxis.set_tick_params(width=2, labelsize=10)
+                    ax.yaxis.set_tick_params(width=2, labelsize=10)
+                    if tess == False: plt.savefig(figdir+'detections/' + 'phase_EPIC'+str(epic)+'_'+str(cnt)+'.pdf')
+                    if tess == True: plt.savefig(figdir+'detections/' + 'phase_TIC'+str(epic)+'_'+str(cnum)+'_'+str(cnt)+'.pdf')
+                    plt.clf()
+
+        ##if saving don't return anything other than the filename where the results where saved
+
+        return savefile, detection
+
+
 
 
 ##a function that bins a lightcurve into a certain number of bins
@@ -167,12 +415,9 @@ def transit_window4_slide_pyfit(p, args, model=False):
     transitshape = slopebox(t, p[3], p[4], ttime, p[5])
     themod = polyshape*transitshape
     resid = (fl-themod)/sig_fl
-    #if model == True: return themod, polyshape, transitshape, resid
-    #import pdb
-    #import matplotlib.pyplot as plt
-    #pdb.set_trace()
     if model == True: return themod, polyshape, transitshape, resid
     return resid
+
 
 def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False, efrac=1e-3, resolvable_trans=False, cleanmask=[-1, -1], deltabic=-1.0, animator=False, animatorfunc=None, show_progress=True):
     '''
@@ -406,63 +651,6 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False, efr
                 ##here take the axes passed in an plot the latest stuff for the animator then immediately return
                 print('animating')
                 return wdat.t, themod, wdat.fraw, nullpoly, pos_outlier, dontuse, bicnull - bicfull
-                #animatorfunc[0].set_data(wdat.t, themod)
-                #animatorfunc[1].set_data(wdat.t, nullpoly)
-                ##now set the axes
-
-                #return animatorfunc
-                #animator_func.set_data('
-
- #            make figures or check things?
-#             if i >= -1:
-#                 plotting moviemaking stuff, usually not run.
-#                 import pdb
-#                 import matplotlib.pyplot as plt
-#                 pdb.set_trace()
-#                 plt.plot(wdat.t, wdat.fraw, '.')
-#                 plt.plot(wdat.t, themod, 'r')
-#                 plt.plot(wdat.t, modpoly, 'g')
-#                 plt.show()
-#                 import pdb
-#                 pdb.set_trace()
-#                 mmm = np.zeros(len(wdat.t), dtype=int)
-#                 mmm[pos_outlier] = -1
-#                 oks = np.where((mmm >= 0))[0]
-#                 ax1 = plt.subplot(211)
-#                 plt.plot(wdat.t[oks], wdat.fraw[oks], 'ko', label='K2 Data')
-#                 plt.plot(wdat.t[ttt], wdat.fraw[ttt], 'm*', markersize=18)
-#                 plt.plot(wdat.t, themod, 'r', label = 'Poly + Notch')
-#                 plt.plot(wdat.t, modpoly, 'r-.')
-#                 plt.plot(wdat.t, nullpoly, '--g', label='Poly')
-#                 plt.plot(wdat.t[pos_outlier], wdat.fraw[pos_outlier], 'rx', markeredgecolor='r', mew=2)
-#                 if i <= 460:  plt.legend(loc='upper right')
-#                 ax1.set_ylabel('Relative Flux')
-#                 ax1.ticklabel_format(useOffset=False, style='plain')
-#
-#                 ax2 = plt.subplot(212)
-#                 oks2 = np.where((fittimes < fittimes[i]))[0]
-#                 plt.plot(fittimes[oks2]-fittimes[0], detrend[oks2], 'k.')
-#                 plt.plot(fittimes[wind[ttt]]-fittimes[0], wdat.fraw[ttt]/modpoly[ttt], '*m', markersize=18)
-#                 beyond = np.where(fittimes > fittimes[i])[0]
-#                 plt.plot(fittimes[beyond]-fittimes[0], data.fcor[beyond], 'g.')
-#                 ax2.set_ylabel('Relative Flux')
-#                 ax2.set_xlabel('Time (days)')
-#                 if i <= 460:
-#                     ax2.set_xlim([5, 16])
-#                     ax2.set_ylim([0.985, 1.02])
-#                 if i >460:
-#                     ax2.set_ylim([0.975, 1.02])
-#                     ax2.set_xlim([0.00, fittimes[-1]-fittimes[0]])
-#                 ax2.ticklabel_format(useOffset=False, style='plain')
-#                 if i <= 460:
-#                     for nnn in range(100): plt.savefig('moviemake/'+str(i)+'_'+str(nnn)+'_movmake.png')
-#                 if i > 460:
-#                     plt.savefig('moviemake/'+str(i)+'_0'+'_movmake.png')
-#                import pdb
-#                pdb.set_trace()
-#
-#                plt.clf()
-
 
             ##if the bayesian information criterion for the full and null models provide evidence against the transit notch, 
             ##just use the null model for the fit, the difference required to believe a transit notch is required is by
@@ -732,9 +920,6 @@ def sliding_window4(data, windowsize=0.5, use_raw=False, efrac=1e-3, resolvable_
 
 
 
-
-
-
 def spotbreak_model(t, breakpos, breaksize): ##model spot appearance/dissapearance as a hat function
     model = np.ones(len(t))
     #import pdb
@@ -767,6 +952,8 @@ def transit_window_slide_pyfit3(p, args, model=False):
     resid = (fl-themod)/sig_fl
     if model == True: return themod, polyshape, transitshape, spotshape, resid
     return resid
+
+
 ##more complex poly version of sliding window DEVELOPMENT VERSION OF NOTCH WINDOWER
 def sliding_window3(data, windowsize=0.5, use_arclength=False, use_raw=False, efrac=1e-3, resolvable_trans=False, cleanmask=[-1, -1], deltabic=-1.0):
     '''
@@ -1288,86 +1475,12 @@ def rcomb(data, prot, rmsclip=3.0, aliasnum=2.0, cleanmask=[-1, -1]):
                         print( 'limit hit for outliers')
                     rrr +=1
 
-
-
-
-
-                    #print 'removing ' + str(len(outlp) + ' outliers '  + str(rrr)
-
-#                     import pdb
-#                     import matplotlib.pyplot as plt
-#                     import matplotlib as mpl
-#                     for iii, ooo in enumerate(olc): plt.plot(thisphase, ooo, '.', markersize=5, color=mpl.cm.gray(iii*10))
-#                     plt.plot(thisphase, thislc, 'r.')
-#                     plt.plot(thisphase, themodel, 'sb')
-#                     bbbb = np.where(thisflag != 1)[0]
-#                     plt.plot(thisphase[bbbb], thislc[bbbb], 'm.')
-#                     plt.show()
-#                     pdb.set_trace()
-
-
-
-#                     if rrr >=3:
-#                         import pdb
-#                         import matplotlib.pyplot as plt
-#                         import matplotlib as mpl
-#                         from matplotlib import gridspec
-#
-#                         mpl.rcParams['lines.linewidth']   = 1.5
-#                         mpl.rcParams['axes.linewidth']    = 2
-#                         mpl.rcParams['xtick.major.width'] =2
-#                         mpl.rcParams['ytick.major.width'] =2
-#                         mpl.rcParams['ytick.labelsize'] = 15
-#                         mpl.rcParams['xtick.labelsize'] = 15
-#                         mpl.rcParams['axes.labelsize'] = 18
-#                         mpl.rcParams['legend.numpoints'] = 1
-#                         mpl.rcParams['axes.labelweight']='semibold'
-#                         mpl.rcParams['font.weight']='semibold'
-#                         qwe = np.where(thisflag == 0)[0]
-#
-#                         fig = plt.figure()
-#                         gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
-#                         ax0 = plt.subplot(gs[0])
-#                         ax1 = plt.subplot(gs[1])
-#                         for iii, ooo in enumerate(olc): ax0.plot(thisphase, ooo, '.', markersize=5, color=mpl.cm.gray(iii*10))
-#                         ax0.plot(thisphase, themodel, 'sb', markersize=7)
-#                         ax0.plot(thisphase, thislc, 'r.', markersize=8)
-#                         ax0.plot(thisphase[qwe], thislc[qwe], 'm.', markersize=8)
-#
-#                         ax0.set_ylim([0.985, 1.015])
-#                         ax0.set_ylabel('Relative Brightness')
-#                         #plt.tight_layout()
-#                         #
-#                         #plt.clf()
-#
-#                         okok = np.where(thisflag==1)[0]
-#                         resid = thislc - themodel
-#                         ax1.plot(thisphase[okok], resid[okok]*1000.0, 'ok', markersize=6)
-#                         ax1.plot([0.0, 1.0], [0.0, 0.0], 'k--')
-#                         ax1.set_ylabel('O-C (mmag)')
-#                         ax1.set_xlabel('Rotational Phase')
-#                         ax1.set_ylim([-5, 5])
-#                         plt.savefig('Rotational_fit_example_hyades_planet.pdf')
-#                         plt.show()
-#                         pdb.set_trace()
-
-
                 ##what happens to the model at point where thisflag==0? should really remove the model
                 ##and replace with interpolation from of actually fit points
                 nofit = np.where(thisflag == 0)[0]
                 if len(nofit) > 0 :
                     donefit = np.where(thisflag == 1)[0]
-                    #pdb.set_trace()
                     themodel[nofit] = np.interp(thisphase[nofit], thisphase[donefit], themodel[donefit])
-                #if i > 0:
-                        #import pdb
-                        #import matplotlib.pyplot as plt
-                       # plt.plot(thisphase, thislc, '.')
-                        #zxc = np.where(thisflag==0)[0]
-                       # plt.plot(thisphase[zxc], thislc[zxc], '.m')
-                       # plt.plot(thisphase, themodel, '.r')
-                        #plt.show()
-
 
 
             else: ##if no points, (fail case for k2sff) flag everything as bad, model is null
@@ -1663,7 +1776,6 @@ def locor2(data, prot, rmsclip=3.0, aliasnum=2.0, cleanmask=[-1, -1], deltabic=0
     return data.t, depthstore, detrend, finalmodel, badflag
 
 
-
 ##SNR calculation for BLS power spectra that uses a median-absolut-deviation estimator for the
 ##half normal distribution stdev, works fairly well for most periods. There could be issues if you search a huge span of periods where red noise effects statistics.
 def bls_power_analysis_snr(pgrid, power):
@@ -1681,8 +1793,11 @@ def bls_power_analysis_snr(pgrid, power):
 
 ##run to search for transit like signals in a detrended lightcurve, basically a stand-alone copy of what detrend_k2 does
 ##data has to look like the recarrays used everywhere else in this code
-def bls_transit_search(data, detrend, badflag, rmsclip=3.0, snrcut=7.0, cliplow = 30.0, binn=300, period_matching=[-1, -1, -1], searchmax=30.0, searchmin=1.0000001, mindcyc=0.005, maxdcyc=0.3, freqmode='standard', datamode='standard'):
-##assess the output flags from the detrending
+def bls_transit_search(data, detrend, badflag, rmsclip=3.0, snrcut=7.0, cliplow
+                       = 30.0, binn=300, period_matching=[-1, -1, -1],
+                       searchmax=30.0, searchmin=1.0000001, mindcyc=0.005,
+                       maxdcyc=0.3, freqmode='standard', datamode='standard'):
+    ##assess the output flags from the detrending
     mmm = np.ones(len(data.t), dtype=int)
     bad = np.where(((data.s<0.0) | (data.s>8)) & (detrend<0.99) | (detrend <=0.0))[0]
     mmm[bad] = 0
@@ -1823,236 +1938,13 @@ def bls_transit_search(data, detrend, badflag, rmsclip=3.0, snrcut=7.0, cliplow 
     return best_p, dp, t0, detsig, firstpower, 1.0/freq, firstphase, dcyc
 
 
-
-##wrapper function that runs the detrending in a controlled way, including reading/writing data.
-def do_detrend(cnum, epic, arclength=False, raw=False, wsize=1.0, totalfilename='', data_dir='/Volumes/UT2/UTRAID/K2raw/', outdir='', saveoutput=True, resolvabletrans=False, k2sff=False, indata=np.array([False, False]), idstring='', known_period=[-1, -1, -1], known_period2 = [-1, -1, -1], deltabic=-1.0, cleanup=False, period_matching=[-1, -1], snrcut=7.0, demode=1, max_period=30.0, min_period=1.00001, alias_num=2.0, tess=False, show_progress=True):
-
-    '''
-    Wrapper for running the notch filter and LOCoR detrending and BLS searches
-
-    Currently the inputs are not ideal, theres some decluttering to do...
-
-    Inputs:Coming soon
-
-
-    Optional Inputs:Coming soon, lots
-
-
-    Outputs: Coming soon, lots of options
-
-    '''
-
-#     detection = 0
-#     ##figure out the filename for reading in
-#     cdir      = 'c'+str(cnum) + '/'
-#     if (type(cnum) == type(0)) & (cnum < 10):
-#         cstrng = str(cnum)
-#         cstrng = '0'+cstrng
-#     else: cstrng = str(cnum)
-#     #i#mport pdb
-#     #pdb.set_trace()
-#     filename  = data_dir+cdir+'hlsp_k2sff_k2_lightcurve_' + str(epic) + '-c'+cstrng + '_kepler_v1_llc.fits'
-#     ##if complete path to the datafile is given use that only
-#     if totalfilename != '': filename = totalfilename
-#
-#
-#
-#     ##define the output directory for results:
-#     if outdir == '': outdir = data_dir+cdir+'results/'
-#     ##output directory for figures
-#     figdir = outdir + 'figures/'
-#     ##read the data file
-#     if (k2sff == False) & (type(indata[0]) == type(np.array([False])[0])): data = read_datafile_vanderburg(filename, clean=True)
-#     if (k2sff == True) & (type(indata[0]) == type(np.array([False])[0])):
-#         filename = data_dir + 'ep'+str(epic)+'.idl'
-#         if idstring != '': filename = data_dir + 'ep'+str(epic)+'_'+idstring+'.idl'
-#         data, dummy1, dummy2 = read_datafile_avextract(filename, clean=True)
-    if type(indata[0]) != type(np.array([False])[0]):
-        data = indata.copy() ## the case where we passed the data directly
-        #print 'case for input data'
-
-
-    ##if we know where the planet is and want to aggressively detrend with a transit mask
-    ##make a mask array for use in sliding window
-    transmask=[-1, -1]
-    if (known_period[0] != -1) & (cleanup == True):
-        kphase = calc_phase(data.t, known_period[0], known_period[1])
-        keep   = np.where((kphase < known_period[2]) | (kphase > known_period[3]))[0]
-        transmask = np.zeros(len(kphase), dtype=int)+99
-        transmask[keep] = 0
-
-
-
-
-    ##run the detrending sliding notch fitter, LOCoR, or Something Else???!?
-    print('Running Detrend')
-    if demode == 1: fittimes, depth, detrend, polyshape, badflag = sliding_window(data, windowsize=wsize, use_arclength=arclength, use_raw=raw, deltabic=deltabic, resolvable_trans=resolvabletrans, cleanmask=transmask, show_progress=show_progress) ##Notch Filter
-    if demode == 2: fittimes, depth, detrend, polyshape, badflag = rcomb(data, wsize, cleanmask=transmask, aliasnum=alias_num) ##LOCoR
-
-
-    ##for the cleanup case, don't bother with trying to find transits:
-    if cleanup == True: return fittimes, depth, detrend, polyshape, badflag
-   # import pdb
-   # pdb.set_trace()
-    ##run the bls search, rmsclip should really be =1
-    if period_matching[0] < 0:
-        #import pdb
-        #pdb.set_trace()
-        best_p, dp, t0, detsig, firstpower, pgrid, firstphase, dcyc =  bls_transit_search(data, detrend, badflag, rmsclip=1.5, snrcut=snrcut, period_matching=period_matching, searchmax=max_period, searchmin=min_period)
-        ##now clean out high-arclength points in each division, then retry
-
-        divs = np.unique(data.divisions).astype(int)
-        if tess == False:
-            runmask = np.zeros(len(data.t), int)
-            for dd in range(len(divs)):
-                thisdiv = np.where(data.divisions == divs[dd])[0]
-                ##kill 5 % on each side
-                keep = np.where((data.s[thisdiv] < np.percentile(data.s[thisdiv], 96)) & (data.s[thisdiv] > np.percentile(data.s[thisdiv], 4)))[0]
-                runmask[thisdiv[keep]] = 1
-
-            gomask = np.where(runmask == 1)[0]
-        #import pdb
-        #pdb.set_trace()
-        if (len(divs) == 1) | (tess == True):
-            print( 'skipping gomask search')
-        ##now rerun BLS with these good points only
-        if (len(divs) > 1) & (tess == False):
-            best_p2, dp2, t02, detsig2, firstpower, pgrid2, firstphase, dcyc2 =  bls_transit_search(data[gomask], detrend[gomask], badflag[gomask], rmsclip=1.5, snrcut=snrcut, period_matching=period_matching, searchmax=max_period, searchmin=min_period)
-
-            best_p = np.concatenate((best_p2, best_p))
-            dp = np.concatenate((dp2, dp))
-            t0 = np.concatenate((t02, t0))
-            detsig = np.concatenate((detsig2, detsig))
-            dcyc = np.concatenate((dcyc2, dcyc))
-
-
-        ##for the demode=2 case, run again with all detrend outliers clipped
-        if (demode == 2) | (demode == 3):
-            gomask = np.where(badflag == 1)[0]
-            best_p3, dp3, t03, detsig3, firstpower3, pgrid3, firstphase, dcyc3 =  bls_transit_search(data[gomask], detrend[gomask], badflag[gomask], rmsclip=1.5, snrcut=snrcut, period_matching=period_matching, searchmax=max_period, searchmin=min_period)
-            best_p = np.concatenate((best_p, best_p3))
-            dp = np.concatenate((dp, dp3))
-            t0 = np.concatenate((t0, t03))
-            detsig = np.concatenate((detsig, detsig3))
-            dcyc = np.concatenate((dcyc, dcyc3))
-
-
-
-    ##injection recovery input matching section here:
-    if period_matching[0] > 0:
-        pmatch_result =  bls_transit_search(data, detrend, badflag, rmsclip=1.0, snrcut=snrcut, period_matching=period_matching, searchmax=max_period, searchmin=min_period)
-        if pmatch_result[0] == 0: #now run additional searches if the standard one fails to get you your planet back
-
-            if (tess == True) & ((demode == 1) | (demode == 5)): ##run the deltabic search, only for notch pipe
-                print('Doing BIC Mode')
-                bicstat = depth[1]-np.median(depth[1])
-                bicstat = 1- bicstat/np.max(bicstat)
-                pmatch_result =  bls_transit_search(data, bicstat, badflag, rmsclip=1.0, snrcut=snrcut, period_matching=period_matching, searchmax=max_period, searchmin=min_period, datamode='bic')
-
-         ##now clean out high-arclength points in each division, then retry
-            divs = np.unique(data.divisions).astype(int)
-            if tess == False:
-                divs = np.unique(data.divisions)
-                runmask = np.zeros(len(data.t), int)
-                for dd in range(len(divs)):
-                    thisdiv = np.where(data.divisions == divs[dd])[0]
-                    ##kill 4% on each side
-                    keep = np.where((data.s[thisdiv] < np.percentile(data.s[thisdiv], 96)) & (data.s[thisdiv] > np.percentile(data.s[thisdiv], 4)))[0]
-                    runmask[thisdiv[keep]] = 1
-                ##now run with the new arclength mask for each division
-
-                gomask = np.where(runmask == 1)[0]
-
-            if len(divs) == 1 | (tess == True): print( 'skipping gomask search')
-           ## print tess
-            if (len(divs) > 1) & (tess == False):
-                pmatch_result =  bls_transit_search(data[gomask], detrend[gomask], badflag[gomask], rmsclip=1.0, snrcut=snrcut, period_matching=period_matching, searchmax=max_period, searchmin=min_period)
-
-            ##for demode=2 case, run again with all detrend outliers clipped, if still not finding injected signal
-            if (pmatch_result[0] == 0) & (demode == 2): ##for tess and not tess
-                gomask = np.where(badflag==1)[0]
-                pmatch_result =  bls_transit_search(data[gomask], detrend[gomask], badflag[gomask], rmsclip=1.0, snrcut=snrcut, period_matching=period_matching, searchmax=max_period, searchmin=min_period)
-
-        return pmatch_result
-
-    ##if not saving the output, return useful variables
-    if saveoutput == False: return data, fittimes, depth, detrend, polyshape, badflag, pgrid, firstpower, firstphase, detsig, best_p, dp, t0, dcyc
-
-    ##start outputting here, if instructed to, this makes outputfiles and lots of plots
-    if saveoutput == True:
-        mmm = np.ones(len(data.t), dtype=int)
-        bad = np.where(((data.s<0.0) | (data.s>8)) & (detrend<0.99) | (detrend <=0.0))[0]
-        mmm[bad] = 0
-
-        ##remove other high points, they can hid transits from BLS
-        lcrms = np.sqrt(np.nanmean((1.0-detrend)**2))
-        good = np.where((badflag < 2)  & (mmm == 1) & (detrend < 2**lcrms+1.0))[0]
-        import matplotlib.pyplot as plt
-        savefile = outdir+'detrend_EPIC'+str(epic)+'.pkl'
-        if tess == True: savefile = outdir+'detrend_TIC'+str(epic)+'_'+str(cnum)+'.pkl'
-
-        pickle.dump((data, fittimes, depth, detrend, polyshape, badflag, pgrid, firstpower, firstphase, detsig, best_p, dp, t0, dcyc), open(savefile, 'wb'))
-        ##save the detrended LC regardless of the presence of a detection:
-        #unphased plot
-        plt.plot(data.t[good]-data.t[0], detrend[good], '.')
-        ax = plt.subplot(111)
-        ax.set_ylim([np.max([0.98, np.min(detrend[good])-0.001]), np.min([np.max(detrend[good])+0.001, 1.01])])
-        ax.set_xlabel('Time (days)')
-        ax.set_ylabel('Relative Brightness')
-        xlab = ax.xaxis.get_label()
-        ylab = ax.yaxis.get_label()
-        xlab.set_weight('bold')
-        xlab.set_size(12)
-        ylab.set_weight('bold')
-        ylab.set_size(12)
-        [i.set_linewidth(2) for i in ax.spines.itervalues()]
-        ax.xaxis.set_tick_params(width=2, labelsize=10)
-        ax.yaxis.set_tick_params(width=2, labelsize=10)
-        if tess == False: plt.savefig(figdir + 'detrend_EPIC'+str(epic)+'.pdf')
-        if tess == True: plt.savefig(figdir + 'detrend_TIC' + str(epic) +'_'+str(cnum)+'.pdf')
-        plt.clf()
-
-        ##if a reasonable planet detection is found
-        ##phased plot
-        if (detsig[0] > snrcut):
-            for cnt in range(len(detsig)):
-                if detsig[cnt] >= 7.0:
-                    detection = 1
-                    thisphase = calc_phase(data.t, best_p[cnt], t0[cnt])
-                    plt.plot(thisphase[good], detrend[good], '.')
-                    ax = plt.subplot(111)
-                    ax.set_ylim([np.max([0.98, np.min(detrend[good])-0.001]), np.min([np.max(detrend[good])+0.001, 1.01])])
-                    ax.set_xlabel('Phase (P=' + str(np.round(best_p[cnt], decimals=4)) + ' days, ' +str(np.round(detsig[cnt], decimals=1)) + '-sigma)')
-                    ax.set_ylabel('Relative Brightness')
-                    xlab = ax.xaxis.get_label()
-                    ylab = ax.yaxis.get_label()
-                    xlab.set_weight('bold')
-                    xlab.set_size(12)
-                    ylab.set_weight('bold')
-                    ylab.set_size(12)
-                    [i.set_linewidth(2) for i in ax.spines.itervalues()]
-                    ax.xaxis.set_tick_params(width=2, labelsize=10)
-                    ax.yaxis.set_tick_params(width=2, labelsize=10)
-                    if tess == False: plt.savefig(figdir+'detections/' + 'phase_EPIC'+str(epic)+'_'+str(cnt)+'.pdf')
-                    if tess == True: plt.savefig(figdir+'detections/' + 'phase_TIC'+str(epic)+'_'+str(cnum)+'_'+str(cnt)+'.pdf')
-                    plt.clf()
-
-        ##if saving don't return anything other than the filename where the results where saved
-
-        return savefile, detection
-
-
-
-
-
-
 def make_transitstamp_interactive(starname, time, detrend, bflag, period, t0, outdir='transitstamps/'):
     from gaussfit import gaussfit_mp
     from plotpoint import plotpoint
     import matplotlib.pyplot as plt
     import matplotlib as mpl
 
-##set matplotlibglobal params
+    ##set matplotlibglobal params
     mpl.rcParams['lines.linewidth']   = 1.5
     mpl.rcParams['axes.linewidth']    = 2
     mpl.rcParams['xtick.major.width'] =2
@@ -2063,8 +1955,6 @@ def make_transitstamp_interactive(starname, time, detrend, bflag, period, t0, ou
     mpl.rcParams['legend.numpoints'] = 1
     mpl.rcParams['axes.labelweight']='semibold'
     mpl.rcParams['font.weight'] = 'semibold'
-
-
 
     phase = calc_phase(time, period, t0)
     phasetime = (phase-0.5)*period
@@ -2130,6 +2020,7 @@ def make_transitstamp_interactive(starname, time, detrend, bflag, period, t0, ou
     plt.close("all")
     donefig = 1
 
+
 def lomb_the_scargle(time, flux, prange=[0.1, 40.0], snrcut = 5.0, fullreturn=False):
     '''
     function to do a lomb-scargle periodogram and figure out the rotation period
@@ -2141,26 +2032,10 @@ def lomb_the_scargle(time, flux, prange=[0.1, 40.0], snrcut = 5.0, fullreturn=Fa
     pssize = 10000
     fbin, binsize, ebin, allgoodind, tbin = k2sff.lcbin(time, flux, 60, usemean=False, userobustmean=True, linfit=False)
 
-
-
-
     lspgram  = LombScargle(time[allgoodind], flux[allgoodind])
     freqs    = np.linspace(1.0/prange[1], 1.0/prange[0], pssize)
 
-    ##cut out the bad freqencies
-
-   # bad = np.where((1/freqs>0.121) & (1/freqs<0.123))[0]
-   ## bad2 = np.where((1/freqs>0.243) & (1/freqs<0.2475))[0]
-    #bmask = np.zeros(len(freqs), dtype=int)
-    #bmask[bad] = -1
-    #bmask[bad2] = -1
-    #keep=np.where(bmask == 0)[0]
-    #freqs=freqs[keep]
     lspower = lspgram.power(freqs, normalization='model')
-
-    #import pdb
-    #import matplotlib.pyplot as plt
-    #pdb.set_trace()
 
     stepsize = (1/prange[0]-1/prange[1])/pssize*2
     ks = np.round(1.0/stepsize).astype(int)
@@ -2169,7 +2044,6 @@ def lomb_the_scargle(time, flux, prange=[0.1, 40.0], snrcut = 5.0, fullreturn=Fa
 
     cleansig = lspower-mfiltpower ##dividing can create peaks in weird cases
 
-
     rms = np.sqrt(np.mean((np.median(cleansig)-cleansig)**2))
     mad = np.median(np.absolute(np.median(cleansig)-cleansig))
     snr = cleansig/rms
@@ -2177,14 +2051,9 @@ def lomb_the_scargle(time, flux, prange=[0.1, 40.0], snrcut = 5.0, fullreturn=Fa
     peakind = np.argmax(snr)
     peaksnr = snr[peakind]
 
-
     period  = 1/freqs[peakind]
     if peaksnr < snrcut: period = 1000
     print( 'Period is ' + str(period) + ' days')
 
     if fullreturn == True: return cleansig, freqs, period, peakind, snr
     return period
-
-
-
-
