@@ -514,13 +514,8 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
         line      = np.polyval(np.polyfit(wdat.t, wdat.fraw, 1), wdat.t)
         lineoff   = np.sqrt(np.nanmean((wdat.fraw-line)**2))
         lineresid = (wdat.fraw-line)/lineoff
-        #mlevel = np.median(wdat.fraw)
-        #if use_raw == False: flare  = np.where((wdat.fraw/mlevel > 1.005) | (lineresid > 3.0))[0]
-        #if use_raw == True:  flare  = np.where(lineresid > 3.0)[0]
         flare  = np.where((lineresid > 8.0) | (wdat.fraw < 0.0))[0]
         wdat.qual[flare] = 2
-        #extrabad = np.where(wdat.fraw < 0.0)[0]
-        #flar
 
         ##fit the model to the window at this transit time
         ##build the inputs for MPYFIT
@@ -583,9 +578,9 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
             pos_outlier = np.array([], dtype=int)
             pars = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
             #print( 'in nodata fit')
+
         else: ##if enough points in this window to do the full notch filter fit, go fit it
             #print 'in full fit'
-
 
             ##if switch to set, don't try the single point transit (45 mins)
             ##also adjust related fit limit
