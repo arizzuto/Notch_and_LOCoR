@@ -5,13 +5,11 @@ import scipy.stats
 import os
 
 from scipy.optimize import curve_fit
-from lcfunctions import robustmean
 
 ##installed things
 from tqdm import tqdm
-import bls
 import mpyfit ##using mpyfit for the sliding window because its a C version and is incredibly fast compared to the python only version. Results are identical.
-import batman ## Kreidbergs BATMAN package
+# import batman ## Kreidbergs BATMAN package
 
 np.set_printoptions(suppress=True)
 
@@ -293,7 +291,7 @@ def lcbin(time2, lc, nbins, usemean=False, userobustmean=False, linfit=False):
     tbin    = (np.arange(nbins, dtype=float)+0.5)*binsize + np.nanmin(time2)
     if  (userobustmean == True) or (linfit==True): allgoodind = np.array([-1])
 
-
+    from lcfunctions import robustmean
     for i in range(nbins):
         w = np.where((time >= i*binsize) & (time < (i+1)*binsize))[0]
         if len(w) > 0:
@@ -1833,7 +1831,6 @@ def bls_transit_search(data, detrend, badflag, rmsclip=3.0, snrcut=7.0, cliplow
     pout = np.where(badflag == 1)[0]
     bad  = np.where(badflag == 3)[0]
 
-
     ##The transit search on the detrended lightcurve, using BLS.
 
     ##setup the bls stuff
@@ -1880,8 +1877,14 @@ def bls_transit_search(data, detrend, badflag, rmsclip=3.0, snrcut=7.0, cliplow
             dcyc = dcyc[0:cnt+1]
             break ## if lots of bad points, kill
 
+        import bls
+
         #THIS is the BLS search now
-        power, thisbest_p, best_pow, thisdp, qnum, in1, in2 = bls.eebls(data.t[good[torun]], detrend[good[torun]], uvect[good[torun]], vvect[good[torun]], len(freq), freq[0], fstep, binn, mindcyc, maxdcyc)
+        power, thisbest_p, best_pow, thisdp, qnum, in1, in2 = (
+            bls.eebls(data.t[good[torun]], detrend[good[torun]],
+                      uvect[good[torun]], vvect[good[torun]], len(freq),
+                      freq[0], fstep, binn, mindcyc, maxdcyc)
+        )
         if cnt == 0: firstpower = power*1.0 ##save the most raw power spectrum for outputting
 
         ##now is where we have to clean pgrid of found things
@@ -1892,9 +1895,6 @@ def bls_transit_search(data, detrend, badflag, rmsclip=3.0, snrcut=7.0, cliplow
                 matchgrid = np.where((pgrid < best_p[ddd]/(aaa+1)-2*timeres) | (pgrid > best_p[ddd]/(aaa+1)+2*timeres))[0]
                 pgrid = pgrid[matchgrid]
                 power = power[matchgrid]
-        import pdb
-        #pdb.set_trace()
-
 
         ##Determine the highest SNR peak by flattening first
         bbp, snr  = bls_power_analysis_snr(pgrid, power)
@@ -1903,9 +1903,11 @@ def bls_transit_search(data, detrend, badflag, rmsclip=3.0, snrcut=7.0, cliplow
 
         ##center the transit at phase 0.5 for ease of use later
         ##need to rerun the BLS on the best point from the good analysis to do this
-        dpower, dthisbest_p, dbest_pow, dthisdp, dqnum, din1, din2 = bls.eebls(data.t[good[torun]], detrend[good[torun]], uvect[good[torun]], vvect[good[torun]], 1, 1.0/best_p[cnt], fstep, binn, mindcyc, maxdcyc)
-        #import pdb
-        #pdb.set_trace()
+        dpower, dthisbest_p, dbest_pow, dthisdp, dqnum, din1, din2 = (
+            bls.eebls(data.t[good[torun]], detrend[good[torun]],
+                      uvect[good[torun]], vvect[good[torun]], 1,
+                      1.0/best_p[cnt], fstep, binn, mindcyc, maxdcyc)
+        )
         dcyc[cnt] = dqnum*1.0
         dp[cnt]   = dthisdp*1.0 ##store the depth
         if din1 > din2: din1 -= binn
