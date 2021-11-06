@@ -291,7 +291,7 @@ def lcbin(time2, lc, nbins, usemean=False, userobustmean=False, linfit=False):
     tbin    = (np.arange(nbins, dtype=float)+0.5)*binsize + np.nanmin(time2)
     if  (userobustmean == True) or (linfit==True): allgoodind = np.array([-1])
 
-    from lcfunctions import robustmean
+    from notch_and_locor.lcfunctions import robustmean
     for i in range(nbins):
         w = np.where((time >= i*binsize) & (time < (i+1)*binsize))[0]
         if len(w) > 0:
@@ -1391,10 +1391,10 @@ def rcomb(data, prot, rmsclip=3.0, aliasnum=2.0, cleanmask=[-1, -1]):
         liblc  += (thisperiod*1.0, )
         libph  += (phase[bnd]*1.0, )
         libflag +=(badflag[bnd]*1, )
-    liblc     = np.array(liblc)
-    libph     = np.array(libph)
-    libflag   = np.array(libflag)
-    keepindex = np.array(keepindex)
+    liblc     = np.array(liblc, dtype='object')
+    libph     = np.array(libph, dtype='object')
+    libflag   = np.array(libflag, dtype='object')
+    keepindex = np.array(keepindex, dtype='object')
     stackmod  = liblc*0.0
 
     ##we now have a clean library of rotation periods with outliers flagged up.

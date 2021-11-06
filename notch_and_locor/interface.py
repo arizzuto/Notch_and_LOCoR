@@ -1,5 +1,5 @@
-import core
-import lcfunctions
+from notch_and_locor import core
+from notch_and_locor import lcfunctions
 from astropy.io import fits
 import numpy as np
 import matplotlib.pyplot as plt
@@ -116,13 +116,16 @@ class target:
 
     def run_notch(self,window=0.5,mindbic=-1.0,useraw=False):
         '''
-            A wrapper to run the notch filtering pipeline
-            user can specify window size, and also notch evidence strength (Delta Bayesian Information Criterion between notch and no-notch models) to accept notch.
-            The above defaults are usually fine for most things.
+        A wrapper to run the notch filtering pipeline user can specify
+        window size, and also notch evidence strength (Delta Bayesian
+        Information Criterion between notch and no-notch models) to accept
+        notch.  The above defaults are usually fine for most things.
         '''
 
 
-        notch = lcfunctions.run_notch(self.data,window=window,mindbic=mindbic,useraw=useraw)
+        notch = lcfunctions.run_notch(
+            self.data, window=window, mindbic=mindbic, useraw=useraw
+        )
         self.notch = notch.copy()
         self.notch_windowsize = window*1.0
         self.notch_mindbic = mindbic*1.0
@@ -131,21 +134,39 @@ class target:
 
     def run_locor(self,prot=None,alias_num=0.1,useraw=False):
         '''
-            A wrapper to run the LOCoR pipeline
-            User has to give a prot either as an input optional argument, or by making sure self has a prot attribute (self.prot = something)
-            User can also specify the minimum period to alias the rotation period up to, to ensure data volume in each rotation is sufficient.
-        '''
+        A wrapper to run the LOCoR pipeline
 
+        User has to give a prot either as an input optional argument, or by
+        making sure self has a prot attribute (self.prot = something)
+
+        User can also specify the minimum period to alias the rotation
+        period up to, to ensure data volume in each rotation is sufficient.
+
+        The variable "alias_num" is the minimum rotation period to
+        bunch rotations together to run LOCoR.  This is useful when your
+        rotation period is really small and there's not enough points in
+        each rotation. For TESS short cadence, this usually doesn't
+        matter. At say 30 min cadence, a 0.5 day rotation
+        period has only 24 points -> you might want to use alias_num=2.0 days
+        to get ~100 points grouped together.
+        '''
 
         if not prot:
             if hasattr(self,'prot') == False:
                 print("You haven't provided a rotation period mate!")
-                print("either call target.run_locor(prot=X) in days, or do target.prot = X (in days) first then call target.run_locor()")
-                print("Also, remember to provide a period to alias to, this is important for long cadence [Use alias_num=X days argument], for short cadence TESS maybe 0.1 is fine")
+                print("either call target.run_locor(prot=X) in days, or "
+                      "do target.prot = X (in days) first then call "
+                      "target.run_locor()")
+                print("Also, remember to provide a period to alias to, "
+                      "this is important for long cadence [Use alias_num=X "
+                      "days argument], for short cadence TESS maybe 0.1 is "
+                      "fine")
                 return
             else: prot = self.prot
 
-        locor = lcfunctions.run_locor(self.data,prot,alias_num=alias_num,useraw=useraw)
+        locor = lcfunctions.run_locor(
+            self.data, prot, alias_num=alias_num, useraw=useraw
+        )
 
         self.locor = locor.copy()
         self.locor_prot = prot*1.0

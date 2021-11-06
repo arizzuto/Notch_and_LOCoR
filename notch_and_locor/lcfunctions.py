@@ -1,13 +1,25 @@
+"""
+Contents:
+    run_notch
+    run_locor
+    showmenotch
+    run_bls
+    run_bls_bic : BLS on the BIC time-series
+    LCconvertCTL
+    LCcombine
+    robustmean
+    bulk_run
+"""
 import numpy as np
-import core
+from notch_and_locor import core
 
 import os
-import interface as thymeNL #is this circular and bad?
+from notch_and_locor import interface as thymeNL #is this circular and bad?
 import pickle as pkl
 
 def run_notch(data, window=0.5, mindbic=-1.0, useraw=False):
     '''
-        a wrapper that runs the Notch filter detrending via core.do_detrend()
+    a wrapper that runs the Notch filter detrending via core.do_detrend()
     '''
 
     print('Running notch filter pipeline with windowsize of ' + str(window) +
@@ -44,7 +56,7 @@ def run_notch(data, window=0.5, mindbic=-1.0, useraw=False):
 
 def run_locor(data, prot, alias_num=0.01, useraw=False):
     '''
-        a wrapper that runs the LOCoR detrending via core.do_detrend()
+    a wrapper that runs the LOCoR detrending via core.do_detrend()
     '''
 
     print('Running LOCoR with rotation period of ' + str(prot) +
@@ -191,6 +203,7 @@ def LCcombine(lclist):
     outdata = stack_arrays(lclist, asrecarray= True, usemask = False)
     return outdata
 
+
 def robustmean(y, cut):
     '''
     Compute a robust mean of a variable, used in other functions
@@ -210,7 +223,6 @@ def robustmean(y, cut):
     sc = np.max([cut, 1.0])
     if sc <= 4.5: sigma=sigma/(-0.15405+0.90723*sc-0.23584*sc**2+0.020142*sc**3)
     return np.mean(y[goodind]), sigma/np.sqrt(len(y)-1.0), len(y) - len(goodind), goodind
-
 
 
 def bulk_run(tic_list, download_dir):
