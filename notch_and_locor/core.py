@@ -448,7 +448,7 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
     Great for masking over a transit signal that you dont want influencing the
     fit. Default is [-1, -1] which turns it off
 
-    (6) detlabic: Bayesian information cirterion difference between the transit
+    (6) deltabic: Bayesian information cirterion difference between the transit
     and no-transit model required to select the transit model. A higher value
     indicates more required evidence. Default is -1.0, which is at least equal
     evidence with a ~1 margin for uncertainty. Set to np.inf to always choose
@@ -492,41 +492,70 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
 
     if show_progress == True:
         itit = tqdm(range(start, len(fittimes)))
-    else: itit = range(start, len(fittimes))
+    else:
+        itit = range(start, len(fittimes))
 
     for i in itit:
 
-        ##grab the window
+        # grab the window
         wind     = np.where((data.t < fittimes[i]+wsize/2.0) & (data.t > fittimes[i]-wsize/2.0))[0]
         wdat     = data[wind].copy()
         starttime = wdat.t[0]*1.0
         thistime = fittimes[i]-wdat.t[0]
         wdat.t  -= wdat.t[0]
         ttt      = np.where(wdat.t == thistime)[0]
-        if cleanmask[0] != -1: wcleanmask = cleanmask[wind].copy()
+        if cleanmask[0] != -1:
+            wcleanmask = cleanmask[wind].copy()
 
-        ##switch out the raw flux for the Vanderburg flat-fielded flux if not using arc-length parameters
-        if use_raw == False: wdat.fraw = wdat.fcor
+        # switch out the raw flux for the Vanderburg flat-fielded flux if not
+        # using arc-length parameters
+        if use_raw == False:
+            wdat.fraw = wdat.fcor
 
+        # if you have only one point in this window, don't try fitting anything
+        # (because np.polyfit will yield a LinAlg error).  assign defaults, and
+        # skip to the next window.
+        if len(wdat) == 1:
 
-        ##now linearize the data for initial checking:
-        ##and impose a threshold cut for flaring events
+            modpoly = np.array([wdat.fraw])
+            pos_outlier = np.array([], dtype=int)
+            flare = np.array([], dtype=int)
+            pars = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+            ttt           = np.where(wdat.t == thistime)[0]
+            detrend[i]    = wdat.fraw[ttt]/modpoly[ttt]
+            polyshape[i]  = modpoly[ttt]*1.0
+            depthstore[i] = pars[5]*1.0
+            badflag[wind[pos_outlier]] = 1
+            badflag[wind[flare]] = 2
+            if cleanmask[0] != -1:
+                intrans = np.where(cleanmask == 99)[0]
+                badflag[intrans] = 0
+
+            if show_progress:
+                print(f"For index {i}, caught single-point window. "
+                      "Skipping to end!")
+
+            continue
+
+        # now linearize the data for initial checking:
+        # and impose a threshold cut for flaring events
         line      = np.polyval(np.polyfit(wdat.t, wdat.fraw, 1), wdat.t)
         lineoff   = np.sqrt(np.nanmean((wdat.fraw-line)**2))
         lineresid = (wdat.fraw-line)/lineoff
         flare  = np.where((lineresid > 8.0) | (wdat.fraw < 0.0))[0]
         wdat.qual[flare] = 2
 
-        ##fit the model to the window at this transit time
-        ##build the inputs for MPYFIT
+        # fit the model to the window at this transit time
+        # build the inputs for MPYFIT
         pstart  = np.array([np.nanmedian(wdat.fraw), -0.01, -0.01, 0.0, 0.0, 0.002, 0.08, 0.0])
-        ##run a polyfit to get starting parameters for a full fit:
+        # run a polyfit to get starting parameters for a full fit:
         initpoly = np.polyfit(wdat.t, wdat.fraw, 2)
         pstart[0] = initpoly[2]
         pstart[1]  = initpoly[1]
         pstart[2] = initpoly[0]
         error   = efrac*wdat.fraw
-        ##find zero points, this happens on rare occasions and messes things up badly if not dealt with
+        # find zero points, this happens on rare occasions and messes things up badly if not dealt with
         qwe = np.where(wdat.fraw == 0.0)[0]
         error[qwe] = np.inf ##assign it a dramatic error
 
@@ -535,141 +564,200 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
         ##eats points that should be included in fit
         #passed_trans = np.where((detrend[wind] < 0.999) & (wind-wind[0] < len(wind)/3))[0]
         ##what we really should do is keep a running depth standard deviation
-        passed_trans = np.where((depthstore[wind] > 5.0*np.std(depthstore[0:i+1])) & (wind-wind[0] < len(wind)/3))[0]
-        if i < 10: passed_trans = np.where(depthstore[wind] > 1e10)[0]
 
-        ##has something previously been flagged as bad? This should only be points ID'd as flares in passed windows
-        ##this step basically is an ensurance policy for when multiple flares creep into a window making clipping hard.
+        passed_trans = np.where(
+            (depthstore[wind] > 5.0*np.std(depthstore[0:i+1])) & (wind-wind[0] < len(wind)/3)
+        )[0]
+
+        if i < 10:
+            passed_trans = np.where(depthstore[wind] > 1e10)[0]
+
+        # has something previously been flagged as bad? This should only be
+        # points ID'd as flares in passed windows this step basically is an
+        # insurance policy for when multiple flares creep into a window making
+        # clipping hard.
         suspect = np.where((badflag[wind] ==2) & (wind != ttt))[0]
 
-        ##combine the flare points, suspect points, and passed_transits
+        # combine the flare points, suspect points, and passed_transits
         dontuse = np.unique(np.append(np.append(flare, suspect), passed_trans))
 
-        ##if running the cleanup detrending when we known were the transit is:
-        ##this should mean all in-transit points don't alter the detrending fit
+        # if running the cleanup detrending when we known were the transit is:
+        # this should mean all in-transit points don't alter the detrending fit
         if cleanmask[0] != -1:
             intrans = np.where(wcleanmask == 99)[0]
             dontuse = np.unique(np.append(dontuse, intrans))
 
-        ##set all these points to bad
+        # set all these points to bad
         error[dontuse] = np.inf
 
-        ##set up the fitting parinfo dictionary
+        # set up the fitting parinfo dictionary
         parinfo2 = [{'fixed':False, 'limits':(None, None), 'step':0.1} for dddd in range(pstart.shape[0])]
         parinfo2[5]['step']      = 1.0
         parinfo2[6]['step']      = 0.0105
         parinfo2[5]['limits']    = (0.0, 1.0)
         parinfo2[6]['limits']    = (0.02, 0.207)
 
-        ##if arc length is not going to be used in the fit, fix those parameters
+        # if arc length is not going to be used in the fit, fix those parameters
         if use_arclength == False:
             parinfo2[3]['fixed'] = True
             parinfo2[4]['fixed'] = True
             parinfo2[7]['fixed'] = True
 
-        if (use_raw == False) & (use_arclength == True): parinfo2[4]['fixed'] = True #make arclength fit linear when using corrected curves and arclength
+        # make arclength fit linear when using corrected curves and arclength
+        if (use_raw == False) & (use_arclength == True):
+            parinfo2[4]['fixed'] = True
 
-        ##run on a grid of transit durations for the notch, for things that are planet like in depth
+        # run on a grid of transit durations for the notch, for things that are planet like in depth
         lgrid = np.array([0.75, 1.0, 2.0, 4.0])/24.0
         numpars = len(parinfo2) - np.sum([parinfo2[dude]['fixed'] for dude in range(len(parinfo2))])
 
-        if len(wdat) < numpars+1+5:##if hardly any points in window, just use the initial fit
+        # if hardly any points in window, just use the initial fit
+        if len(wdat) < numpars+1+5:
             modpoly = np.polyval(initpoly, wdat.t)
             pos_outlier = np.array([], dtype=int)
             pars = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            #print( 'in nodata fit')
 
-        else: ##if enough points in this window to do the full notch filter fit, go fit it
-            #print 'in full fit'
-
-            ##if switch to set, don't try the single point transit (45 mins)
-            ##also adjust related fit limit
+        # if enough points in this window to do the full notch filter fit, go fit it
+        else:
+            # if switch to set, don't try the single point transit (45 mins)
+            # also adjust related fit limit
             if resolvable_trans == True:
                 lgrid = np.array([1.0, 2.0, 4.0])/24.0
                 parinfo2[6]['limits'] = (0.0415, 0.2)
-            ##fix the duration in the grid fitting
+            # fix the duration in the grid fitting
             parinfo2[6]['fixed'] = True
             bestpars             = pstart*0.0
-            current_chi2         = np.inf ##not going to store anything except the current best solution on the grid
+            current_chi2         = np.inf # not going to store anything except the current best solution on the grid
+
             for l in range(len(lgrid)):
+
                 pstart[6] = lgrid[l]
-               # import pdb
-                #pdb.set_trace()
-                dfit2, extrares = mpyfit.fit(transit_window_slide_pyfit, pstart, args=(wdat.t, wdat.fraw, error, wdat.s, thistime), parinfo=parinfo2, maxiter=200) ##args = t, fl, sig_fl, s, ttime
+
+                ##args = t, fl, sig_fl, s, ttime
+                dfit2, extrares = mpyfit.fit(
+                    transit_window_slide_pyfit, pstart,
+                    args=(wdat.t, wdat.fraw, error, wdat.s, thistime),
+                    parinfo=parinfo2, maxiter=200
+                )
+
                 if extrares['bestnorm'] < current_chi2:
                     bestpars     = dfit2*1.0
                     current_chi2 = extrares['bestnorm']*1.0
-            ##Now that best grid solution is found, unfix the transit duration paramater
+
+            # Now that best grid solution is found, unfix the transit duration paramater
             parinfo2[6]['fixed'] =False
 
-            ##run the fit with no fixed parameters but from the best grid point result from above
+            # run the fit with no fixed parameters but from the best grid point result from above
             pstart  = bestpars
-            pars, extrares = mpyfit.fit(transit_window_slide_pyfit, pstart, args=(wdat.t, wdat.fraw, error, wdat.s, thistime), parinfo=parinfo2, maxiter=200)
-            themod, modpoly, modnotch, modresid = transit_window_slide_pyfit(pars, args=(wdat.t, wdat.fraw, error, wdat.s, thistime), model=True)
+            pars, extrares = mpyfit.fit(
+                transit_window_slide_pyfit, pstart,
+                args=(wdat.t, wdat.fraw, error, wdat.s, thistime),
+                parinfo=parinfo2, maxiter=200
+            )
 
-            ##remove high outliers (like flares) and run again, do this based on a statistical measure like rms
-            ##loop a few times to converge on an outlier-less solution
-            ##run the outlier rejection 5 times, that should be enough....
+            themod, modpoly, modnotch, modresid = (
+                transit_window_slide_pyfit(
+                    pars, args=(wdat.t, wdat.fraw, error, wdat.s, thistime),
+                    model=True)
+            )
+
+            # remove high outliers (like flares) and run again, do this based
+            # on a statistical measure like rms loop a few times to converge on
+            # an outlier-less solution run the outlier rejection 5 times, that
+            # should be enough....
             pos_outlier = np.zeros(0, int)
             cliperr     = error*1.0
             oldnum=0
 
-
-
             for lll in range(0, 5):
+
                 koff     = np.where(np.isinf(cliperr) == False)[0]
                 rms      = np.sqrt(np.mean((wdat.fraw[koff]-themod[koff])**2))
                 rmsoff   = (wdat.fraw - themod)/rms
                 knownbad = np.where(np.isinf(cliperr))[0]
-                if np.isnan(rms) | (rms ==0): break
 
+                if np.isnan(rms) | (rms ==0):
+                    break
 
-                ##identify outliers
+                # identify outliers
                 new_outl    = np.where((rmsoff > cliplim) | (rmsoff < -cliplim))[0]
                 pos_outlier = np.unique(np.append(pos_outlier, new_outl))
                 cliperr[:]  = rms*1.0
-                cliperr[pos_outlier] = np.inf   ##set outlier point uncertainties to effective infinity
-                cliperr[knownbad]    = np.inf   ##set outlier point uncertainties to effective infinity
+                cliperr[pos_outlier] = np.inf   # set outlier point uncertainties to effective infinity
+                cliperr[knownbad]    = np.inf   # set outlier point uncertainties to effective infinity
 
-                if (len(pos_outlier) > oldnum) | (lll==0): ##dont refit unless theres a new point flagged as an outlier.
-                    fa      = {'fl':wdat.fraw, 'sig_fl':cliperr, 't':wdat.t, 's':wdat.s, 'ttime':thistime}
-                    args=(wdat.t, wdat.fraw, error, wdat.s, thistime)
-                    pars, thisfit = mpyfit.fit(transit_window_slide_pyfit, pstart, args=(wdat.t, wdat.fraw, cliperr, wdat.s, thistime), parinfo=parinfo2)
-                    themod, modpoly, modnotch, modresid = transit_window_slide_pyfit(pars, args=(wdat.t, wdat.fraw, cliperr, wdat.s, thistime), model=True)
+                # dont refit unless theres a new point flagged as an outlier.
+                if (len(pos_outlier) > oldnum) | (lll==0):
+
+                    fa      = {'fl':wdat.fraw, 'sig_fl':cliperr, 't':wdat.t,
+                               's':wdat.s, 'ttime':thistime}
+
+                    args = (wdat.t, wdat.fraw, error, wdat.s, thistime)
+                    pars, thisfit = mpyfit.fit(
+                        transit_window_slide_pyfit, pstart,
+                        args=(wdat.t, wdat.fraw, cliperr, wdat.s, thistime),
+                        parinfo=parinfo2
+                    )
+
+                    themod, modpoly, modnotch, modresid = (
+                        transit_window_slide_pyfit(
+                            pars, args=(
+                                wdat.t, wdat.fraw, cliperr, wdat.s, thistime
+                            ), model=True)
+                    )
 
                 oldnum = len(pos_outlier)
-            ##calculate the final model chi2 here, need to recalc because the rms number might have changed after the last outlier rejection and model fit
+
+            # calculate the final model chi2 here, need to recalc because the
+            # rms number might have changed after the last outlier rejection
+            # and model fit
+
             modchi2 = np.sum(((themod-wdat.fraw)/cliperr)**2)
 
-            ##try model with no transit, i.e fix the depth to zero
+             #try model with no transit, i.e fix the depth to zero
             parinfo2[5]['fixed'] = True
             nullstart           = pars.copy()
             nullstart[5]        = 0.0
 
-            nullfit, nullextra = mpyfit.fit(transit_window_slide_pyfit, nullstart, args=(wdat.t, wdat.fraw, cliperr, wdat.s, thistime), parinfo=parinfo2)
-            nullmod, nullpoly, dummy, nullresid = transit_window_slide_pyfit(nullfit, args=(wdat.t, wdat.fraw, cliperr, wdat.s, thistime), model=True)
+            nullfit, nullextra = mpyfit.fit(
+                transit_window_slide_pyfit, nullstart,
+                args=(wdat.t, wdat.fraw, cliperr, wdat.s, thistime),
+                parinfo=parinfo2
+            )
+
+            nullmod, nullpoly, dummy, nullresid = (
+                transit_window_slide_pyfit(
+                    nullfit, args=(
+                        wdat.t, wdat.fraw, cliperr, wdat.s, thistime
+                    ), model=True)
+            )
+
             nullchi2 = np.sum(nullresid**2)
 
-            ##what are the two model bayesian information criteria?
+            # what are the two model bayesian information criteria?
             numpars = len(parinfo2) - np.sum([parinfo2[dude]['fixed'] for dude in range(len(parinfo2))])
             npoints  = len(np.where(cliperr < 0.99)[0])
             bicnull  = nullchi2 + (numpars-2)*np.log(npoints)
             bicfull  = modchi2  + numpars*np.log(npoints)
-            #import pdb
-            #pdb.set_trace()
 
             if animator == True:
-                ##here take the axes passed in an plot the latest stuff for the animator then immediately return
+                # here take the axes passed in an plot the latest stuff for the
+                # animator then immediately return
                 print('animating')
-                return wdat.t, themod, wdat.fraw, nullpoly, pos_outlier, dontuse, bicnull - bicfull
+                return (
+                    wdat.t, themod, wdat.fraw, nullpoly, pos_outlier, dontuse,
+                    bicnull - bicfull
+                )
 
-            ##if the bayesian information criterion for the full and null models provide evidence against the transit notch, 
-            ##just use the null model for the fit, the difference required to believe a transit notch is required is by
-            ##default 0, which is very inclusive, but can be tuned if you know what you're looking for.
-            ##deltaBIC > 0 means notch is favoured.
+            # if the bayesian information criterion for the full and null
+            # models provide evidence against the transit notch, just use the
+            # null model for the fit, the difference required to believe a
+            # transit notch is required is by default 0, which is very
+            # inclusive, but can be tuned if you know what you're looking for.
+            # deltaBIC > 0 means notch is favoured.
             dbic[i] = bicnull - bicfull
             if dbic[i] < deltabic:
-                modpoly = nullmod ##if notch not required, use the null model
+                modpoly = nullmod # if notch not required, use the null model
                 ##pars[5] = 0.0     ##set to zero for later storage, actually retain it for record keeping
             if  i > np.inf: ##for Aaron to look at whats getting notched, set i>-1 to see everything
                 print( fittimes[i])
@@ -689,7 +777,9 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
                 plt.show()
                 pdb.set_trace()
 
-        ##save things we care about, like a detrended curve and a transit depth fit for this point in time
+        # save things we care about, like a detrended curve and a transit
+        # depth fit for this point in time
+
         ttt           = np.where(wdat.t == thistime)[0]
         detrend[i]    = wdat.fraw[ttt]/modpoly[ttt]
         polyshape[i]  = modpoly[ttt]*1.0
@@ -701,8 +791,9 @@ def sliding_window(data, windowsize=0.5, use_arclength=False, use_raw=False,
             intrans = np.where(cleanmask == 99)[0]
             badflag[intrans] = 0
 
-    ##spit output
+    # spit output
     return fittimes, [depthstore, dbic], detrend, polyshape, badflag
+
 
 #@profile
 def sliding_window4(data, windowsize=0.5, use_raw=False, efrac=1e-3, resolvable_trans=False, cleanmask=[-1, -1], deltabic=-1.0):
@@ -984,7 +1075,7 @@ def sliding_window3(data, windowsize=0.5, use_arclength=False, use_raw=False, ef
     (4) resolvable_trans: Set to not use the 45 min transit window trail. Default is False.
     (5) cleanmask: binary mask to remove a set of points from the fitting. Great for masking over a transit signal that you
     dont want influencing the fit. Default is [-1, -1] which turns it off
-    (6) detlabic: Bayesian information cirterion difference between the transit and no-transit model required to select the transit model. A higher value
+    (6) deltabic: Bayesian information cirterion difference between the transit and no-transit model required to select the transit model. A higher value
     indicates more required evidence. Default is -1.0, which is at least equal evidence with a ~1 margin for uncertainty. Set to np.inf to always choose the null model
     or -np.inf to always choose the transit model.
 
