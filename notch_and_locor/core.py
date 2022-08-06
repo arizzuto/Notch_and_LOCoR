@@ -20,7 +20,7 @@ def do_detrend(cnum, epic, arclength=False, raw=False, wsize=1.0,
                -1, -1], known_period2 = [-1, -1, -1], deltabic=-1.0,
                cleanup=False, period_matching=[-1, -1], snrcut=7.0, demode=1,
                max_period=30.0, min_period=1.00001, alias_num=2.0, tess=False,
-               show_progress=True):
+               show_progress=False, verbose=False):
 
     '''
     Wrapper for running the notch filter and LOCoR detrending and BLS searches
@@ -48,7 +48,8 @@ def do_detrend(cnum, epic, arclength=False, raw=False, wsize=1.0,
         transmask[keep] = 0
 
     ##run the detrending sliding notch fitter, LOCoR, or Something Else???!?
-    print('Running Detrend')
+    if verbose: 
+        print('Running Detrend')
     if demode == 1:
         fittimes, depth, detrend, polyshape, badflag = (
             sliding_window(
