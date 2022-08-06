@@ -114,7 +114,7 @@ class target:
         if returnfigs == True: return fig,ax
 
 
-    def run_notch(self,window=0.5,mindbic=-1.0,useraw=False):
+    def run_notch(self,window=0.5,mindbic=-1.0,useraw=False, verbose=False, show_progress=False):
         '''
         A wrapper to run the notch filtering pipeline user can specify
         window size, and also notch evidence strength (Delta Bayesian
@@ -124,7 +124,7 @@ class target:
 
 
         notch = lcfunctions.run_notch(
-            self.data, window=window, mindbic=mindbic, useraw=useraw
+            self.data, window=window, mindbic=mindbic, useraw=useraw, verbose=verbose, show_progress=show_progress
         )
         self.notch = notch.copy()
         self.notch_windowsize = window*1.0
